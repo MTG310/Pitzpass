@@ -655,15 +655,7 @@ body { background: var(--pp-paper); }
 .pp-sales-refresh span { color: var(--pp-green); font-size: 19px; line-height: 1; }
 .pp-sales-refresh:hover { transform: translateY(-1px); border-color: var(--pp-blue); background: #f8faff; }
 .pp-sales-refresh:disabled { cursor: wait; opacity: .65; }
-.pp-sales-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.pp-sales-totals article { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 21px 20px; border: 1px solid #e3e8f0; border-radius: 15px; background: #fff; box-shadow: 0 5px 18px #1f3c7208; }
-.pp-sales-total-icon { display: grid; flex: 0 0 42px; width: 42px; height: 42px; place-items: center; border-radius: 13px; background: #eaf0fa; color: var(--pp-blue); font-size: 21px; font-weight: 800; }
-.pp-sales-total--tickets .pp-sales-total-icon { background: #eaf4e6; color: #398426; }
-.pp-sales-total--orders .pp-sales-total-icon { background: #fbecef; color: var(--pp-red); }
-.pp-sales-totals article > div { display: grid; min-width: 0; gap: 5px; }
-.pp-sales-totals article > div > span { color: #657087; font-size: 12px; font-weight: 700; }
-.pp-sales-totals article strong { overflow-wrap: anywhere; color: var(--pp-blue); font: 800 clamp(21px, 2.4vw, 29px)/1.1 Manrope, Arial, sans-serif; letter-spacing: -.6px; }
-.pp-sales-list-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 30px 0 13px; }
+.pp-sales-list-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 0 13px; }
 .pp-sales-list-heading h3 { margin: 0; color: var(--pp-blue); font: 800 17px Manrope, Arial, sans-serif; }
 .pp-sales-list-heading > span { color: #778196; font-size: 12px; font-weight: 700; }
 .pp-sales-event-list { display: grid; gap: 11px; }
@@ -690,8 +682,6 @@ body { background: var(--pp-paper); }
 	.pp-organizer-fields { grid-template-columns: 1fr; }
 	.pp-organizer-description { grid-column: auto; }
 	.pp-organizer-login { padding: 22px; }
-	.pp-sales-totals { grid-template-columns: 1fr; gap: 9px; }
-	.pp-sales-totals article { padding: 15px 16px; }
 	.pp-sales-event { padding: 15px; }
 	.pp-sales-event-stats { gap: 8px; }
 	.pp-sales-event-stats span { font-size: 9px; }

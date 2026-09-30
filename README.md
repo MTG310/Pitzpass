@@ -43,7 +43,7 @@ The site is built with browser-native HTML, CSS, and JavaScript and runs as a Cl
 - The server validates selected seats, quantity, event, and price before creating an order.
 - Availability refreshes while an event page is open and when a visitor returns to the tab.
 - Organizer tab with password-protected sign-in and an event editor for titles, show labels, dates, times, student arrival times, venues, prices, and descriptions.
-- Staff-only sales dashboard with total demo orders, ticket counts, and demo order totals overall and per event.
+- Staff-only sales dashboard with ticket counts, order counts, demo order totals, and remaining seat counts for each event.
 - Per-show assigned-seat availability and uncapped general-admission summaries, with a manual refresh control.
 - Sales figures represent simulated order totals, not revenue from processed payments.
 - Organizer settings are saved centrally and shown on public event and schedule pages.
