@@ -1,6 +1,7 @@
 import { EVENTS, formatEventDate, formatEventTime, formatPrice } from "./events.js";
 import {
 	getAdminEvents,
+	getAdminSales,
 	getAdminSession,
 	getEvents,
 	getInventory,
@@ -52,6 +53,9 @@ const state = {
 	organizerLoading: false,
 	organizerError: "",
 	organizerEvents: [],
+	organizerSales: null,
+	organizerSalesLoading: false,
+	organizerSalesError: "",
 	organizerSavingEventId: "",
 	organizerNotice: "",
 	organizerNoticeEventId: "",
@@ -246,6 +250,7 @@ function loadOrganizer() {
 		state.organizerChecked = true;
 		state.organizerLoading = false;
 		render();
+		if (authenticated) void loadOrganizerSales();
 	}).catch((error) => {
 		state.organizerAuthenticated = false;
 		state.organizerChecked = true;
@@ -253,6 +258,20 @@ function loadOrganizer() {
 		state.organizerError = error.message;
 		render();
 	});
+}
+
+async function loadOrganizerSales() {
+	state.organizerSalesLoading = true;
+	state.organizerSalesError = "";
+	render();
+	try {
+		state.organizerSales = await getAdminSales();
+	} catch (error) {
+		state.organizerSalesError = error.message;
+	} finally {
+		state.organizerSalesLoading = false;
+		render();
+	}
 }
 
 function renderOrganizer() {
@@ -288,6 +307,18 @@ function renderOrganizer() {
 			</div>
 			<div class="pp-organizer-event-actions"><button class="pp-button pp-button--navy" type="submit" ${state.organizerSavingEventId === event.id ? "disabled" : ""}>${state.organizerSavingEventId === event.id ? "Saving…" : "Save event details"}</button>${state.organizerNotice && state.organizerNoticeEventId === event.id ? `<span role="status">${escapeHTML(state.organizerNotice)}</span>` : ""}</div>
 		</form>`).join("");
+	const salesCards = state.organizerSales?.events.map((event) => `
+		<article class="pp-sales-event">
+			<div class="pp-sales-event-heading"><div><p class="pp-eyebrow pp-eyebrow--dark">${escapeHTML(event.type === "seated" ? "ASSIGNED SEATING" : "GENERAL ADMISSION")}</p><h3>${escapeHTML(event.title)} · ${escapeHTML(event.session)}</h3></div><span class="pp-sales-ticket-count">${event.ticketsSold.toLocaleString()} <small>tickets</small></span></div>
+			<div class="pp-sales-event-stats"><div><span>Orders</span><strong>${event.orderCount.toLocaleString()}</strong></div><div><span>Demo order totals</span><strong>${formatPrice(event.demoTotalCents)}</strong></div>${event.remainingSeats === null ? `<div><span>Capacity</span><strong>Uncapped demo</strong></div>` : `<div><span>Seats remaining</span><strong>${event.remainingSeats.toLocaleString()}</strong></div>`}</div>
+		</article>`).join("") ?? "";
+	const salesDashboard = `
+		<section class="pp-sales-dashboard" aria-labelledby="pp-sales-title">
+			<div class="pp-sales-heading"><div><p class="pp-eyebrow pp-eyebrow--dark">ORDER OVERVIEW</p><h2 id="pp-sales-title">Sales dashboard</h2><p>Demo order totals only — no payments have been processed.</p></div><button class="pp-button pp-button--navy" type="button" data-sales-refresh ${state.organizerSalesLoading ? "disabled" : ""}>${state.organizerSalesLoading ? "Refreshing…" : "Refresh"}</button></div>
+			${state.organizerSalesError ? `<div class="pp-sales-error" role="alert"><span>${escapeHTML(state.organizerSalesError)}</span><button class="pp-button pp-button--navy" type="button" data-sales-refresh>Try again</button></div>` : ""}
+			${state.organizerSalesLoading && !state.organizerSales ? `<p aria-live="polite">Loading shared sales data…</p>` : ""}
+			${state.organizerSales ? `<div class="pp-sales-totals"><article><span>Tickets sold</span><strong>${state.organizerSales.totals.ticketsSold.toLocaleString()}</strong></article><article><span>Orders</span><strong>${state.organizerSales.totals.orderCount.toLocaleString()}</strong></article><article><span>Demo order totals</span><strong>${formatPrice(state.organizerSales.totals.demoTotalCents)}</strong></article></div><div class="pp-sales-event-list">${salesCards}</div>` : ""}
+		</section>`;
 
 	return `
 		<main class="pp-page pp-organizer-page">
@@ -295,6 +326,8 @@ function renderOrganizer() {
 			<div class="pp-organizer-heading"><p class="pp-eyebrow pp-eyebrow--dark">STAFF ONLY</p><h1>Manage events</h1><p>Changes are saved to the shared database and appear on the public event pages.</p></div>
 			${state.organizerError ? `<p class="pp-inline-error" role="alert">${escapeHTML(state.organizerError)}</p>` : ""}
 			${state.organizerNotice && !state.organizerEvents.length ? `<p class="pp-inline-error" role="alert">${escapeHTML(state.organizerNotice)}</p>` : ""}
+			${salesDashboard}
+			<div class="pp-organizer-heading pp-organizer-heading--events"><p class="pp-eyebrow pp-eyebrow--dark">EVENT SETUP</p><h2>Manage event details</h2><p>Update the dates, times, venue, prices, and descriptions shown to visitors.</p></div>
 			${state.organizerEvents.length ? `<div class="pp-organizer-event-list">${eventForms}</div>` : `<p>No events are available to manage.</p>`}
 		</main>`;
 }
@@ -907,6 +940,10 @@ app.addEventListener("click", async (event) => {
 		render();
 		return;
 	}
+	if (event.target.closest("[data-sales-refresh]")) {
+		if (state.organizerAuthenticated) void loadOrganizerSales();
+		return;
+	}
 	if (event.target.closest("[data-organizer-logout]")) {
 		state.organizerLoading = true;
 		render();
@@ -915,6 +952,8 @@ app.addEventListener("click", async (event) => {
 			state.organizerAuthenticated = false;
 			state.organizerChecked = true;
 			state.organizerEvents = [];
+			state.organizerSales = null;
+			state.organizerSalesError = "";
 			state.organizerError = "";
 			state.organizerLoading = false;
 		} catch (error) {
@@ -1044,6 +1083,9 @@ app.addEventListener("submit", async (event) => {
 			state.organizerEvents = result.events;
 			applyEventSettings(result.events);
 			state.organizerLoading = false;
+			render();
+			void loadOrganizerSales();
+			return;
 		} catch (error) {
 			state.organizerAuthenticated = false;
 			state.organizerChecked = true;
@@ -1073,6 +1115,14 @@ app.addEventListener("submit", async (event) => {
 				item.id === eventId ? result.event : item
 			);
 			applyEventSettings([result.event]);
+			if (state.organizerSales) {
+				state.organizerSales = {
+					...state.organizerSales,
+					events: state.organizerSales.events.map((item) => item.eventId === eventId
+						? { ...item, title: result.event.title, session: result.event.session }
+						: item)
+				};
+			}
 			state.organizerNotice = `${result.event.title} details saved.`;
 			state.organizerNoticeEventId = eventId;
 			state.organizerSavingEventId = "";

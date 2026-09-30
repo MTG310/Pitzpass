@@ -43,6 +43,9 @@ The site is built with browser-native HTML, CSS, and JavaScript and runs as a Cl
 - The server validates selected seats, quantity, event, and price before creating an order.
 - Availability refreshes while an event page is open and when a visitor returns to the tab.
 - Organizer tab with password-protected sign-in and an event editor for titles, show labels, dates, times, student arrival times, venues, prices, and descriptions.
+- Staff-only sales dashboard with total demo orders, ticket counts, and demo order totals overall and per event.
+- Per-show assigned-seat availability and uncapped general-admission summaries, with a manual refresh control.
+- Sales figures represent simulated order totals, not revenue from processed payments.
 - Organizer settings are saved centrally and shown on public event and schedule pages.
 - Signed, eight-hour `HttpOnly`, `Secure`, `SameSite=Strict` organizer sessions, with failed-login throttling.
 
@@ -164,7 +167,8 @@ General-admission tickets are stored as individual ticket rows. Family Fest is u
 │   ├── orders/[id].js                Order lookup for confirmation
 │   └── admin/
 │       ├── session.js                Organizer login, session, and logout
-│       └── events.js                 Authenticated event management API
+│       ├── events.js                 Authenticated event management API
+│       └── sales.js                  Authenticated sales aggregation endpoint
 ├── src/
 │   ├── app.js                        Pages, navigation, seat map, and interactions
 │   ├── events.js                     Default event and seat-map data

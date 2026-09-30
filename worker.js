@@ -4,6 +4,7 @@ import { onRequestGet as getOrder } from "./functions/api/orders/[id].js";
 import { onRequestPost as placeOrder } from "./functions/api/orders.js";
 import { onRequestGet as getAdminSession, onRequestPost as loginAdmin, onRequestDelete as logoutAdmin } from "./functions/api/admin/session.js";
 import { onRequestGet as getAdminEvents, onRequestPut as updateAdminEvent } from "./functions/api/admin/events.js";
+import { onRequestGet as getAdminSales } from "./functions/api/admin/sales.js";
 import { json } from "./functions/api/_shared.js";
 
 export default {
@@ -33,6 +34,9 @@ export default {
 			}
 			if (url.pathname === "/api/admin/events" && request.method === "PUT") {
 				return updateAdminEvent({ request, env });
+			}
+			if (url.pathname === "/api/admin/sales" && request.method === "GET") {
+				return getAdminSales({ request, env });
 			}
 			if (url.pathname === "/api/orders" && request.method === "POST") {
 				return placeOrder({ request, env });

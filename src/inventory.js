@@ -66,6 +66,10 @@ export function getAdminEvents() {
 	return apiRequest("/api/admin/events");
 }
 
+export function getAdminSales() {
+	return apiRequest("/api/admin/sales");
+}
+
 export function updateAdminEvent(eventId, settings) {
 	return apiRequest("/api/admin/events", {
 		method: "PUT",
