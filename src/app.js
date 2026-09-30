@@ -1,5 +1,15 @@
 import { EVENTS, formatEventDate, formatEventTime, formatPrice } from "./events.js";
-import { getInventory, getOrder, placeOrder } from "./inventory.js";
+import {
+	getAdminEvents,
+	getAdminSession,
+	getEvents,
+	getInventory,
+	getOrder,
+	loginAdmin,
+	logoutAdmin,
+	placeOrder,
+	updateAdminEvent
+} from "./inventory.js";
 
 const app = document.querySelector("#pitz-pass");
 const MAP_WIDTH = 1800;
@@ -29,6 +39,24 @@ const state = {
 	customerEmail: "",
 	notice: "",
 	busy: false,
+	inventory: null,
+	inventoryError: "",
+	inventoryLoading: false,
+	inventoryLoadingEventId: "",
+	confirmationOrderId: "",
+	confirmationOrder: null,
+	confirmationError: "",
+	confirmationLoading: false,
+	confirmationLoadingId: "",
+	organizerAuthenticated: false,
+	organizerLoading: false,
+	organizerError: "",
+	organizerEvents: [],
+	organizerSavingEventId: "",
+	organizerNotice: "",
+	organizerNoticeEventId: "",
+	organizerChecked: false,
+	eventSettingsError: "",
 	mapView: fullMapView()
 };
 let mapGesture = null;
@@ -178,6 +206,7 @@ function currentRoute() {
 	const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
 	if (!parts.length) return { name: "home" };
 	if (parts[0] === "maya-show-info") return { name: "maya-show-info" };
+	if (parts[0] === "organizer") return { name: "organizer" };
 	if (parts[0] === "event" && parts[1]) return { name: "event", id: parts[1] };
 	if (parts[0] === "checkout") return { name: "checkout" };
 	if (parts[0] === "confirmation" && parts[1]) return { name: "confirmation", id: parts[1] };
@@ -191,6 +220,152 @@ function setNotice(message) {
 
 function eventById(eventId) {
 	return EVENTS.find((event) => event.id === eventId) ?? null;
+}
+
+function applyEventSettings(events) {
+	for (const updated of events) {
+		const event = eventById(updated.id);
+		if (!event) continue;
+		Object.assign(event, updated, {
+			venue: { ...event.venue, ...updated.venue }
+		});
+	}
+}
+
+function loadOrganizer() {
+	if (state.organizerLoading) return;
+	state.organizerLoading = true;
+	state.organizerError = "";
+	getAdminSession().then(async ({ authenticated }) => {
+		state.organizerAuthenticated = authenticated;
+		if (authenticated) {
+			const result = await getAdminEvents();
+			state.organizerEvents = result.events;
+			applyEventSettings(result.events);
+		}
+		state.organizerChecked = true;
+		state.organizerLoading = false;
+		render();
+	}).catch((error) => {
+		state.organizerAuthenticated = false;
+		state.organizerChecked = true;
+		state.organizerLoading = false;
+		state.organizerError = error.message;
+		render();
+	});
+}
+
+function renderOrganizer() {
+	if (state.organizerLoading) {
+		return `<main class="pp-page pp-organizer-page"><p class="pp-eyebrow pp-eyebrow--dark">ORGANIZER TOOLS</p><h1>Organizer access</h1><p aria-live="polite">Checking your sign-in…</p></main>`;
+	}
+	if (!state.organizerAuthenticated) {
+		return `
+			<main class="pp-page pp-organizer-page">
+				<a class="pp-back-link" href="#/">← Back to events</a>
+				<div class="pp-organizer-heading"><p class="pp-eyebrow pp-eyebrow--dark">STAFF ONLY</p><h1>Organizer sign in</h1><p>Sign in to update the public event information.</p></div>
+				<form class="pp-organizer-login" data-organizer-login>
+					<label class="pp-field">Username<input name="username" autocomplete="username" required maxlength="100"></label>
+					<label class="pp-field">Password<input name="password" type="password" autocomplete="current-password" required maxlength="256"></label>
+					${state.organizerError ? `<p class="pp-inline-error" role="alert">${escapeHTML(state.organizerError)}</p>` : ""}
+					<button class="pp-button pp-button--navy" type="submit">Sign in</button>
+				</form>
+			</main>`;
+	}
+
+	const eventForms = state.organizerEvents.map((event) => `
+		<form class="pp-organizer-event" data-organizer-event="${escapeHTML(event.id)}">
+			<div class="pp-organizer-event-heading"><div><p class="pp-eyebrow pp-eyebrow--dark">${escapeHTML(event.type === "seated" ? "ASSIGNED SEATING" : "GENERAL ADMISSION")}</p><h2>${escapeHTML(event.title)} · ${escapeHTML(event.session)}</h2></div></div>
+			<div class="pp-organizer-fields">
+				<label class="pp-field">Event title<input name="title" value="${escapeHTML(event.title)}" required maxlength="100"></label>
+				<label class="pp-field">Show or ticket label<input name="session" value="${escapeHTML(event.session)}" required maxlength="100"></label>
+				<label class="pp-field">Date<input name="date" type="date" value="${escapeHTML(event.date)}" required></label>
+				<label class="pp-field">Time<input name="time" type="time" value="${escapeHTML(event.time ?? "")}"></label>
+				<label class="pp-field">Venue<input name="venueName" value="${escapeHTML(event.venue.name)}" required maxlength="120"></label>
+				<label class="pp-field">Ticket price (USD)<input name="price" type="number" min="0" max="10000" step="0.01" value="${(event.priceCents / 100).toFixed(2)}" required></label>
+				${event.type === "seated" ? `<label class="pp-field">Student arrival<input name="studentArrivalTime" value="${escapeHTML(event.studentArrivalTime)}" placeholder="4:30 PM" required></label>` : ""}
+				<label class="pp-field pp-organizer-description">Description<textarea name="description" required maxlength="500" rows="3">${escapeHTML(event.description)}</textarea></label>
+			</div>
+			<div class="pp-organizer-event-actions"><button class="pp-button pp-button--navy" type="submit" ${state.organizerSavingEventId === event.id ? "disabled" : ""}>${state.organizerSavingEventId === event.id ? "Saving…" : "Save event details"}</button>${state.organizerNotice && state.organizerNoticeEventId === event.id ? `<span role="status">${escapeHTML(state.organizerNotice)}</span>` : ""}</div>
+		</form>`).join("");
+
+	return `
+		<main class="pp-page pp-organizer-page">
+			<div class="pp-organizer-topline"><a class="pp-back-link" href="#/">← Back to events</a><button class="pp-button pp-button--navy" type="button" data-organizer-logout>Sign out</button></div>
+			<div class="pp-organizer-heading"><p class="pp-eyebrow pp-eyebrow--dark">STAFF ONLY</p><h1>Manage events</h1><p>Changes are saved to the shared database and appear on the public event pages.</p></div>
+			${state.organizerError ? `<p class="pp-inline-error" role="alert">${escapeHTML(state.organizerError)}</p>` : ""}
+			${state.organizerNotice && !state.organizerEvents.length ? `<p class="pp-inline-error" role="alert">${escapeHTML(state.organizerNotice)}</p>` : ""}
+			${state.organizerEvents.length ? `<div class="pp-organizer-event-list">${eventForms}</div>` : `<p>No events are available to manage.</p>`}
+		</main>`;
+}
+
+async function refreshEventInventory(eventId) {
+	try {
+		const inventory = await getInventory(eventId);
+		if (state.eventId !== eventId || currentRoute().name !== "event") return;
+		const currentSeats = state.inventory?.reservedSeats ?? [];
+		const updatedSeats = inventory.reservedSeats ?? [];
+		const unavailableSelections = [...state.selectedSeats].filter((seat) => updatedSeats.includes(seat));
+		unavailableSelections.forEach((seat) => state.selectedSeats.delete(seat));
+		if (unavailableSelections.length) {
+			state.notice = "A selected seat was just reserved by someone else. Please choose another seat.";
+		}
+		const unchanged = state.inventory &&
+			state.inventory.admitted === inventory.admitted &&
+			currentSeats.length === updatedSeats.length &&
+			currentSeats.every((seat) => updatedSeats.includes(seat));
+		state.inventory = inventory;
+		state.inventoryError = "";
+		if (!unchanged || unavailableSelections.length) render();
+	} catch (error) {
+		if (state.eventId !== eventId || currentRoute().name !== "event") return;
+		state.notice = "Live availability could not be refreshed. Your ticket choice will still be checked at checkout.";
+		render();
+	}
+}
+
+function loadEventInventory(eventId) {
+	if (state.inventoryLoadingEventId === eventId) return;
+	state.inventoryLoading = true;
+	state.inventoryLoadingEventId = eventId;
+	state.inventoryError = "";
+	getInventory(eventId).then((inventory) => {
+		if (state.inventoryLoadingEventId !== eventId) return;
+		state.inventoryLoading = false;
+		state.inventoryLoadingEventId = "";
+		if (state.eventId !== eventId || currentRoute().name !== "event") return;
+		state.inventory = inventory;
+		render();
+	}).catch((error) => {
+		if (state.inventoryLoadingEventId !== eventId) return;
+		state.inventoryLoading = false;
+		state.inventoryLoadingEventId = "";
+		if (state.eventId !== eventId || currentRoute().name !== "event") return;
+		state.inventoryError = error.message;
+		render();
+	});
+}
+
+function loadConfirmationOrder(orderId) {
+	if (state.confirmationLoadingId === orderId) return;
+	state.confirmationLoading = true;
+	state.confirmationLoadingId = orderId;
+	state.confirmationError = "";
+	getOrder(orderId).then((order) => {
+		if (state.confirmationLoadingId !== orderId) return;
+		state.confirmationLoading = false;
+		state.confirmationLoadingId = "";
+		if (currentRoute().name !== "confirmation" || currentRoute().id !== orderId) return;
+		state.confirmationOrder = order;
+		render();
+	}).catch((error) => {
+		if (state.confirmationLoadingId !== orderId) return;
+		state.confirmationLoading = false;
+		state.confirmationLoadingId = "";
+		if (currentRoute().name !== "confirmation" || currentRoute().id !== orderId) return;
+		state.confirmationError = error.message;
+		render();
+	});
 }
 
 function updateMapView(view = state.mapView) {
@@ -276,6 +451,7 @@ function header() {
 				<a href="#/">Home</a>
 				<a href="#events" data-scroll="events">Events</a>
 				<a href="#/maya-show-info">Information</a>
+				<a href="#/organizer">Organizer</a>
 			</nav>
 			<a class="pp-help" href="mailto:events@colegiomaya.edu.sv">Need help?</a>
 		</header>`;
@@ -290,8 +466,10 @@ function renderHome() {
 			<p class="pp-card-venue">${escapeHTML(event.venue.name)}</p>
 			<div class="pp-card-bottom"><span>From <strong>${formatPrice(event.priceCents)}</strong></span><span class="pp-arrow" aria-hidden="true">↗</span></div>
 		</a>`).join("");
-	const mayaShows = EVENTS.filter((event) => event.title === "Maya Show 2027");
+	const mayaShows = EVENTS.filter((event) => event.id === "maya-primary" || event.id === "maya-secondary");
 	const familyEvents = EVENTS.filter((event) => event.id === "family-fest");
+	const mayaTitle = mayaShows[0]?.title ?? "Maya Show";
+	const familyTitle = familyEvents[0]?.title ?? "Family Fest";
 
 	return `
 		<main>
@@ -299,7 +477,7 @@ function renderHome() {
 				<div class="pp-hero-copy">
 					<p class="pp-eyebrow"><span class="pp-live-dot"></span> THE SCHOOL COMMUNITY, TOGETHER</p>
 					<h1>Buy School<br><span>Event Tickets</span></h1>
-					<p class="pp-hero-text">Current Event: Maya Show 2027</p>
+					<p class="pp-hero-text">Current Event: ${escapeHTML(mayaTitle)}</p>
 					<a class="pp-button pp-button--lime" href="#events" data-scroll="events">Explore shows <span aria-hidden="true">↓</span></a>
 				</div>
 				<div class="pp-hero-art pp-hero-gallery" aria-label="Colegio Maya student shows">
@@ -313,13 +491,13 @@ function renderHome() {
 			</section>
 
 			<section class="pp-events-section" id="events">
-				<div class="pp-section-heading"><div><p class="pp-eyebrow pp-eyebrow--dark">SAVE YOUR SEAT</p><h2>Maya Show 2027</h2></div><p>Join us for this special night you won't forget.</p></div>
+				<div class="pp-section-heading"><div><p class="pp-eyebrow pp-eyebrow--dark">SAVE YOUR SEAT</p><h2>${escapeHTML(mayaTitle)}</h2></div><p>Join us for this special night you won't forget.</p></div>
 				<a class="pp-info-link" href="#/maya-show-info"><span><strong>Maya Show schedule & event information</strong><small>See showtimes, student arrival times, venue, and entry details.</small></span><span class="pp-info-link-arrow" aria-hidden="true">→</span></a>
 				<div class="pp-event-grid">${cardsFor(mayaShows)}</div>
 			</section>
 
 			<section class="pp-events-section pp-family-section" id="family-fest">
-				<div class="pp-section-heading"><div><p class="pp-eyebrow pp-eyebrow--dark">ALL ARE WELCOME</p><h2>Family Fest</h2></div><p>Bring your family to this special day.<br>General admission tickets are $1 each.</p></div>
+				<div class="pp-section-heading"><div><p class="pp-eyebrow pp-eyebrow--dark">ALL ARE WELCOME</p><h2>${escapeHTML(familyTitle)}</h2></div><p>Bring your family to this special day.<br>General admission tickets are ${formatPrice(familyEvents[0]?.priceCents ?? 100)} each.</p></div>
 				<div class="pp-event-grid pp-family-event-grid">${cardsFor(familyEvents)}</div>
 			</section>
 
@@ -327,7 +505,12 @@ function renderHome() {
 }
 
 function renderMayaShowInfo() {
-		const shows = EVENTS.filter((event) => event.title === "Maya Show 2027").map((event) => `
+		const mayaShows = EVENTS.filter((event) => event.id === "maya-primary" || event.id === "maya-secondary");
+		const mayaTitle = mayaShows[0]?.title ?? "Maya Show";
+		const primaryShow = mayaShows.find((event) => event.id === "maya-primary");
+		const scheduleDate = primaryShow ? formatEventDate(primaryShow).toUpperCase() : "";
+		const venueName = primaryShow?.venue.name ?? "Teatro Presidente";
+		const shows = mayaShows.map((event) => `
 			<article class="pp-schedule-card">
 				<div class="pp-schedule-card-heading">
 					<p class="pp-eyebrow pp-eyebrow--dark">${escapeHTML(event.session)}</p>
@@ -346,11 +529,11 @@ function renderMayaShowInfo() {
 				<a class="pp-back-link" href="#/" data-scroll="events">← Back to shows</a>
 				<section class="pp-info-heading">
 					<p class="pp-eyebrow pp-eyebrow--dark">COLEGIO MAYA · EVENT INFORMATION</p>
-					<h1>Maya Show 2027</h1>
-					<p>Join us at Teatro Presidente on Thursday, May 27, 2027, for an evening celebrating our students.</p>
+					<h1>${escapeHTML(mayaTitle)}</h1>
+					<p>Join us at ${escapeHTML(venueName)} on ${escapeHTML(primaryShow ? formatEventDate(primaryShow) : "")}, for an evening celebrating our students.</p>
 				</section>
 				<section class="pp-schedule-section" aria-labelledby="maya-show-schedule-title">
-					<div class="pp-section-heading"><div><p class="pp-eyebrow pp-eyebrow--dark">THURSDAY, MAY 27, 2027</p><h2 id="maya-show-schedule-title">Show schedule</h2></div></div>
+					<div class="pp-section-heading"><div><p class="pp-eyebrow pp-eyebrow--dark">${escapeHTML(scheduleDate)}</p><h2 id="maya-show-schedule-title">Show schedule</h2></div></div>
 					<div class="pp-schedule-grid">${shows}</div>
 				</section>
 				<aside class="pp-ticket-reminder" role="note">
@@ -439,7 +622,7 @@ function renderSeatMap(event, inventory) {
 }
 
 function renderEvent(event) {
-	const inventory = getInventory(event.id);
+	const inventory = state.inventory;
 	const sold = event.type === "seated" ? inventory.reservedSeats.length : inventory.admitted;
 	const remaining = event.ticketCapacity === null ? Infinity : Math.max(0, event.ticketCapacity - sold);
 	const selectionCount = event.type === "seated" ? state.selectedSeats.size : state.quantity;
@@ -574,25 +757,52 @@ function render() {
 					state.mapView = fullMapView();
 					state.quantity = 1;
 					state.notice = "";
+					state.inventory = null;
+					state.inventoryError = "";
+					state.inventoryLoading = false;
+					state.inventoryLoadingEventId = "";
 				}
-				page = renderEvent(event);
+				if (state.inventory) {
+					page = renderEvent(event);
+				} else if (state.inventoryError) {
+					page = `<main class="pp-page pp-empty-state" role="alert"><strong>Ticket availability is unavailable.</strong><span>${escapeHTML(state.inventoryError)}</span><button class="pp-button pp-button--navy" type="button" data-retry-inventory>Try again</button></main>`;
+				} else {
+					page = `<main class="pp-page pp-empty-state" aria-live="polite"><strong>Checking live ticket availability…</strong></main>`;
+					loadEventInventory(event.id);
+				}
 			}
 		} else if (route.name === "maya-show-info") {
 			page = renderMayaShowInfo();
+		} else if (route.name === "organizer") {
+			if (!state.organizerChecked && !state.organizerLoading) loadOrganizer();
+			page = renderOrganizer();
 		} else if (route.name === "checkout") {
 			const event = eventById(state.eventId);
 			page = event && (event.type === "general" ? state.quantity > 0 : state.selectedSeats.size > 0)
 				? renderCheckout(event)
 				: `<main class="pp-page pp-empty-state"><strong>Your ticket selection is empty.</strong><span>Choose a show and tickets to continue.</span><a class="pp-button pp-button--navy" href="#/">Browse shows</a></main>`;
 		} else if (route.name === "confirmation") {
-			page = renderConfirmation(getOrder(route.id));
+			if (state.confirmationOrderId !== route.id) {
+				state.confirmationOrderId = route.id;
+				state.confirmationOrder = null;
+				state.confirmationError = "";
+				state.confirmationLoading = false;
+			}
+			if (state.confirmationOrder) {
+				page = renderConfirmation(state.confirmationOrder);
+			} else if (state.confirmationError) {
+				page = `<main class="pp-page pp-empty-state" role="alert"><strong>Ticket confirmation is unavailable.</strong><span>${escapeHTML(state.confirmationError)}</span><a class="pp-button pp-button--navy" href="#/">Browse shows</a></main>`;
+			} else {
+				page = `<main class="pp-page pp-empty-state" aria-live="polite"><strong>Loading your ticket confirmation…</strong></main>`;
+				loadConfirmationOrder(route.id);
+			}
 		} else {
 			page = renderHome();
 		}
 	} catch (error) {
 		page = `<main class="pp-page pp-empty-state" role="alert"><strong>Ticket information is unavailable.</strong><span>${escapeHTML(error.message)}</span><a class="pp-button pp-button--navy" href="#/">Return home</a></main>`;
 	}
-	app.innerHTML = `${header()}${page}<footer class="pp-footer"><a class="pp-brand" href="#/">${logo}<span>Pitz <strong>Pass</strong></span></a><span>Created by Mateo, Amilcar, Gerardo, Allen.</span></footer>`;
+	app.innerHTML = `${header()}${state.eventSettingsError ? `<p class="pp-config-warning" role="alert">${escapeHTML(state.eventSettingsError)}</p>` : ""}${page}<footer class="pp-footer"><a class="pp-brand" href="#/">${logo}<span>Pitz <strong>Pass</strong></span></a><span>Created by Mateo, Amilcar, Gerardo, Allen.</span></footer>`;
 	app.classList.toggle("pp-app--ticketing", route.name === "event" && page.includes("pp-event-page"));
 }
 
@@ -669,7 +879,7 @@ app.addEventListener("click", async (event) => {
 	if (quantityButton) {
 		const currentEvent = eventById(state.eventId);
 		if (!currentEvent) return;
-		const { admitted } = getInventory(currentEvent.id);
+		const admitted = state.inventory?.admitted ?? 0;
 		const remaining = currentEvent.ticketCapacity === null
 			? Infinity
 			: currentEvent.ticketCapacity - admitted;
@@ -689,6 +899,29 @@ app.addEventListener("click", async (event) => {
 	if (event.target.closest('[data-action="checkout"]')) {
 		state.notice = "";
 		location.hash = "#/checkout";
+		return;
+	}
+	if (event.target.closest("[data-retry-inventory]")) {
+		state.inventoryError = "";
+		state.inventoryLoading = false;
+		render();
+		return;
+	}
+	if (event.target.closest("[data-organizer-logout]")) {
+		state.organizerLoading = true;
+		render();
+		try {
+			await logoutAdmin();
+			state.organizerAuthenticated = false;
+			state.organizerChecked = true;
+			state.organizerEvents = [];
+			state.organizerError = "";
+			state.organizerLoading = false;
+		} catch (error) {
+			state.organizerLoading = false;
+			state.organizerError = error.message;
+		}
+		render();
 		return;
 	}
 });
@@ -796,6 +1029,66 @@ app.addEventListener("input", (event) => {
 });
 
 app.addEventListener("submit", async (event) => {
+	const loginForm = event.target.closest("[data-organizer-login]");
+	if (loginForm) {
+		event.preventDefault();
+		const credentials = new FormData(loginForm);
+		state.organizerLoading = true;
+		state.organizerError = "";
+		render();
+		try {
+			await loginAdmin(String(credentials.get("username") ?? ""), String(credentials.get("password") ?? ""));
+			state.organizerAuthenticated = true;
+			state.organizerChecked = true;
+			const result = await getAdminEvents();
+			state.organizerEvents = result.events;
+			applyEventSettings(result.events);
+			state.organizerLoading = false;
+		} catch (error) {
+			state.organizerAuthenticated = false;
+			state.organizerChecked = true;
+			state.organizerLoading = false;
+			state.organizerError = error.message;
+		}
+		render();
+		return;
+	}
+
+	const organizerForm = event.target.closest("[data-organizer-event]");
+	if (organizerForm) {
+		event.preventDefault();
+		const eventId = organizerForm.dataset.organizerEvent;
+		const values = new FormData(organizerForm);
+		const settings = Object.fromEntries(
+			["title", "session", "date", "time", "venueName", "price", "description", "studentArrivalTime"]
+				.map((key) => [key, String(values.get(key) ?? "")])
+		);
+		state.organizerSavingEventId = eventId;
+		state.organizerNotice = "";
+		state.organizerNoticeEventId = eventId;
+		render();
+		try {
+			const result = await updateAdminEvent(eventId, settings);
+			state.organizerEvents = state.organizerEvents.map((item) =>
+				item.id === eventId ? result.event : item
+			);
+			applyEventSettings([result.event]);
+			state.organizerNotice = `${result.event.title} details saved.`;
+			state.organizerNoticeEventId = eventId;
+			state.organizerSavingEventId = "";
+		} catch (error) {
+			state.organizerNotice = error.message;
+			state.organizerSavingEventId = "";
+			if (error.code === "UNAUTHORIZED") {
+				state.organizerAuthenticated = false;
+				state.organizerChecked = true;
+				state.organizerError = error.message;
+			}
+		}
+		render();
+		return;
+	}
+
 	if (event.target.id !== "checkout-form") return;
 	event.preventDefault();
 	if (state.busy) return;
@@ -838,9 +1131,40 @@ app.addEventListener("submit", async (event) => {
 	} catch (error) {
 		state.busy = false;
 		state.notice = error.message;
+		if (error.code === "SEATS_UNAVAILABLE") {
+			try {
+				const inventory = await getInventory(currentEvent.id);
+				const reservedSeats = new Set(inventory.reservedSeats);
+				const unavailableSelections = [...state.selectedSeats].filter((seat) => reservedSeats.has(seat));
+				unavailableSelections.forEach((seat) => state.selectedSeats.delete(seat));
+				state.inventory = inventory;
+				if (unavailableSelections.length) {
+					state.notice = "One or more selected seats were just reserved by someone else. They have been removed from your order.";
+				}
+			} catch (refreshError) {
+				state.notice = `${error.message} Live availability could not be refreshed: ${refreshError.message}`;
+			}
+		}
 		render();
 	}
 });
 
 window.addEventListener("hashchange", render);
+window.addEventListener("hashchange", () => {
+	if (currentRoute().name === "event" && state.eventId) void refreshEventInventory(state.eventId);
+});
+window.addEventListener("focus", () => {
+	if (currentRoute().name === "event" && state.eventId) void refreshEventInventory(state.eventId);
+});
+window.setInterval(() => {
+	if (currentRoute().name === "event" && state.eventId) void refreshEventInventory(state.eventId);
+}, 15000);
+
+getEvents().then((events) => {
+	applyEventSettings(events);
+	render();
+}).catch((error) => {
+	state.eventSettingsError = `Event details could not be refreshed from the shared service. ${error.message}`;
+	render();
+});
 render();

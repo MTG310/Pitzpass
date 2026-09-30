@@ -1,0 +1,13 @@
+functions/
+migrations/
+worker.js
+wrangler.jsonc
+README.md
+.DS_Store
+.assetsignore
+.gitignore
+.git/
+.github/
+.wrangler/
+.dev.vars*
+node_modules/
