@@ -1,150 +1,211 @@
 # Pitz Pass
 
-A responsive event-ticketing prototype for Colegio Maya. Pitz Pass lets families browse school events, choose seats or general-admission tickets, and complete a simulated checkout. The static front end is plain HTML, CSS, and JavaScript; a small Cloudflare Worker API and D1 database provide shared ticket inventory and order storage.
+**Pitz Pass** is a responsive school-event ticketing website for Colegio Maya. Families can browse school events, check event schedules, select auditorium seats or general-admission tickets, and complete a simulated checkout. Organizers can sign in to update event information.
 
-> **Demo only:** Payments are not processed, emails are not sent, and confirmation QR codes are not valid for entry. Never enter real payment information. Orders include attendee name and email and are stored in the connected D1 database.
+The site is built with browser-native HTML, CSS, and JavaScript and runs as a Cloudflare Worker with a D1 database. The shared database keeps ticket availability and event settings in sync across visitors and devices.
 
-## Preview
+> [!IMPORTANT]
+> This is a **demo ticketing system**, not a production payment or venue-entry system. No money is charged, no emails are sent, and the QR codes and wallet-style passes are previews only—not valid tickets. Never enter real payment-card details.
 
-Pitz Pass currently includes the Maya Show 2027 and Family Fest. The interface uses Colegio Maya’s red (`#CB1D3D`), blue (`#1F3C72`), and green (`#4EA635`) palette.
+## Contents
+
+- [Features](#features)
+- [Demo events](#demo-events)
+- [Try the live site](#try-the-live-site)
+- [Run locally](#run-locally)
+- [Deploy to Cloudflare](#deploy-to-cloudflare)
+- [Organizer access](#organizer-access)
+- [How ticket availability works](#how-ticket-availability-works)
+- [Project structure](#project-structure)
+- [Data and privacy](#data-and-privacy)
+- [Production readiness](#production-readiness)
+- [License](#license)
 
 ## Features
 
-- Landing page with event information, schedules, and event selection.
-- Interactive, zoomable Teatro Presidente seat map for the Primary and Secondary Maya Shows.
+### For attendees
+
+- Responsive landing page with event cards, dates, venue, ticket type, and prices.
+- Maya Show information page with showtimes, student arrival times, venue, and entry reminders.
+- Assigned seating for the Primary and Secondary Maya Shows:
+  - Interactive Teatro Presidente seating map with section and row labels.
+  - Zoom, pan, overview, keyboard-accessible seat selection, and selected-seat summaries.
+  - Available and taken seat states.
 - General-admission quantity selection for Family Fest.
-- Checkout with simulated Apple Pay, Google Pay, and card options.
-- Order confirmation with wallet-style ticket previews, locally generated QR graphics, and an Apple Wallet badge preview.
-- Responsive layout for desktop and mobile.
-- Shared inventory and order persistence using Cloudflare D1.
-- Database-enforced seat uniqueness to reject simultaneous attempts to book the same seat.
-- Availability refresh on the event screen while open and when returning to the browser tab.
-- Organizer-only event editor for updating public titles, show labels, dates, times, venue, prices, and descriptions.
-- HttpOnly, signed organizer sessions and login-attempt throttling.
+- Checkout with simulated Apple Pay, Google Pay, or a demo-only card form.
+- Order confirmation with a separate wallet-style pass and QR preview for each ticket.
+- Apple Wallet badge preview; tickets are not added to Apple Wallet.
+
+### Shared ticketing and organizer tools
+
+- Cloudflare D1 stores orders, ticket assignments, event settings, and login rate limits.
+- Database uniqueness constraints prevent the same assigned seat from being ordered twice.
+- The server validates selected seats, quantity, event, and price before creating an order.
+- Availability refreshes while an event page is open and when a visitor returns to the tab.
+- Organizer tab with password-protected sign-in and an event editor for titles, show labels, dates, times, student arrival times, venues, prices, and descriptions.
+- Organizer settings are saved centrally and shown on public event and schedule pages.
+- Signed, eight-hour `HttpOnly`, `Secure`, `SameSite=Strict` organizer sessions, with failed-login throttling.
+
+## Demo events
+
+| Event | Date and time | Venue | Admission | Demo price |
+| --- | --- | --- | --- | --- |
+| Maya Show — Primary | May 27, 2027 at 5:00 PM | Teatro Presidente | Assigned seating | $12 |
+| Maya Show — Secondary | May 27, 2027 at 7:30 PM | Teatro Presidente | Assigned seating | $14 |
+| Family Fest | February 6, 2027; time not set | Colegio Maya campus | General admission | $1 |
+
+Maya Show students arrive 30 minutes before their showtime. Attendees are asked to have their ticket ready when they arrive. Primary and Secondary have separate seat inventories. The supplied theater chart includes 1,410 numbered seats; its printed capacity of 1,411 includes one unnumbered seat that is not offered.
+
+Event details can be changed in the Organizer tab. Family Fest has uncapped general-admission inventory in this demo.
+
+## Try the live site
+
+Open [Pitz Pass](https://pp-website.kh6hb9smyy.workers.dev/). Use the **Information** tab for the Maya Show schedule and the **Organizer** tab for event management.
+
+The organizer username is `admin`. The live password is configured privately in Cloudflare and is not included in this repository. Ask the site owner for access; do not put credentials in an issue, commit, or public message.
 
 ## Run locally
 
-The front end calls the `/api` routes served by the Worker, so a plain static server is not enough to test ticket selection or checkout. To run the complete app locally, install Node.js, then run:
+The complete app needs the Worker API and D1 binding; serving `index.html` with a basic static server is not sufficient. Install [Node.js](https://nodejs.org/), then, from the project root:
 
 ```sh
 npx wrangler d1 migrations apply pitz-pass-tickets --local
 npx wrangler dev
 ```
 
-Wrangler serves the site and API locally. To connect local development to the deployed database, use the appropriate `--remote` D1 option and follow Cloudflare’s [Wrangler development documentation](https://developers.cloudflare.com/workers/wrangler/commands/#dev).
+Wrangler serves the site locally (usually at <http://localhost:8787>) with a local D1 database. Local database state persists under `.wrangler/` and is excluded from Git.
 
-For organizer access locally, configure `ADMIN_PASSWORD` and `SESSION_SECRET` using Wrangler secrets or a local-only `.dev.vars` file. Do not commit credentials or `.dev.vars`. No application framework or build step is used. Wrangler is required to run the Worker API.
+To test organizer sign-in locally, create a `.dev.vars` file in the project root:
 
-## Deploy to Cloudflare Workers
+```dotenv
+ADMIN_PASSWORD=choose-a-local-demo-password
+SESSION_SECRET=paste-a-new-random-secret-of-at-least-32-characters
+```
 
-The current Cloudflare deployment serves static files from a Worker (`*.workers.dev`). The Worker API and database binding are required for cross-device ticket availability. The repository includes a Wrangler configuration for that deployment:
+Generate a signing secret locally with `openssl rand -base64 32`. Keep `.dev.vars` private; it is ignored by Git and excluded from deployed assets. Never use the production password or signing secret for local testing.
 
-1. In Cloudflare, open **Storage & databases → D1 SQL Database** and create a database named `pitz-pass-tickets`.
-2. Copy its database ID from the dashboard and confirm that it matches `database_id` in `wrangler.jsonc`. Keep the database binding name as `DB`.
-3. Install [Node.js](https://nodejs.org/) if it is not installed, then from the project root run:
+## Deploy to Cloudflare
+
+This repository is configured as a **Cloudflare Worker with static assets and a D1 database binding**, not as a Pages-only static site. The configured Worker name is `pp-website`.
+
+### First-time setup
+
+1. Install Node.js and authenticate Wrangler:
 
    ```sh
    npx wrangler login
    ```
 
-4. Set a private organizer password and a strong signing secret. Add these through Wrangler’s secret prompts (do not put them in source files):
+2. Confirm `wrangler.jsonc` contains the D1 database ID for the Cloudflare database named `pitz-pass-tickets`.
+3. Set production secrets in the terminal. Wrangler prompts for each value; secret values are not stored in source files:
 
    ```sh
    npx wrangler secret put ADMIN_PASSWORD
    npx wrangler secret put SESSION_SECRET
    ```
 
-   When prompted for `SESSION_SECRET`, paste a newly generated secret with at least 32 characters (for example, generate one locally with `openssl rand -base64 32`). The organizer username is `admin`. Use a new, unique password for the live site; do not reuse a password shared in chat or used on another account.
+   The username is fixed as `admin`. Use a unique, strong password. Generate a new signing secret with `openssl rand -base64 32`; paste its output only into Wrangler's `SESSION_SECRET` prompt.
 
-5. Apply any pending D1 migrations, then deploy:
+4. Apply pending database migrations and deploy the current saved project:
 
    ```sh
    npx wrangler d1 migrations apply pitz-pass-tickets --remote
    npx wrangler deploy
    ```
 
-6. Visit the Worker URL and use the **Organizer** tab to sign in. The event editor saves changes in D1, so updated event details appear to every visitor.
+### Updating the site
 
-The first migration creates the order and ticket tables. The second creates event settings and login-throttling tables. Existing orders saved in individual browsers are not imported; the shared database starts with its own inventory. Deploying again after future changes uses `npx wrangler deploy`; apply any new database migrations before relying on code that requires them. See Cloudflare’s [Workers static assets](https://developers.cloudflare.com/workers/static-assets/) and [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/) documentation.
+Save local file changes, then run:
 
-## Project layout
+```sh
+npx wrangler d1 migrations apply pitz-pass-tickets --remote
+npx wrangler deploy
+```
+
+The migration command safely applies pending migration files; it does not deploy the website. `wrangler deploy` publishes the local project in the current directory. It does not automatically pull changes from GitHub. Apply new migrations before deploying code that depends on them.
+
+Cloudflare references: [Workers static assets](https://developers.cloudflare.com/workers/static-assets/), [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/), and [Wrangler secrets](https://developers.cloudflare.com/workers/configuration/secrets/).
+
+## Organizer access
+
+- Open the site and select **Organizer** in the top navigation.
+- Sign in with username `admin` and the password configured using the `ADMIN_PASSWORD` Worker secret.
+- Update an event and choose **Save event details**. Saved details are shared through D1 and appear on the public site.
+- Select **Sign out** when finished.
+
+Organizer sessions expire after eight hours. Five failed login attempts in a 15-minute window trigger a temporary rate limit. The organizer password and session-signing secret are server-side Worker secrets; never add them to JavaScript, HTML, Git, or `.dev.vars` committed to the repository.
+
+The dashboard currently edits existing events; it does not create or delete events, manage orders, refund purchases, or issue real tickets.
+
+## How ticket availability works
+
+The browser requests shared inventory from the Worker API. When checkout submits an order, the Worker validates the event and selection, calculates the total from server-side event data, and writes the order and its tickets to D1. A database uniqueness constraint on `(event_id, seat_id)` rejects duplicate seat orders, including concurrent attempts from different devices.
+
+General-admission tickets are stored as individual ticket rows. Family Fest is uncapped in the current demo; add a server-side capacity rule before configuring a capped general-admission event.
+
+## Project structure
 
 ```text
 .
-├── index.html                    HTML shell and application mount point
-├── styles.css                    Responsive styles, including the pp- component namespace
-├── worker.js                     Worker entry point and API routing
-├── wrangler.jsonc                Worker static assets and D1 configuration
-├── .assetsignore                 Keeps backend/config files out of public assets
+├── index.html
+├── styles.css
+├── worker.js                         Worker entry point and API routing
+├── wrangler.jsonc                    Worker, static assets, and D1 configuration
+├── .assetsignore                     Excludes backend and local files from public assets
+├── .gitignore                        Excludes local secrets and generated files from Git
 ├── migrations/
-│   ├── 0001_initial.sql          D1 order and ticket schema
+│   ├── 0001_initial.sql              Orders and ticket inventory schema
 │   └── 0002_event_settings_and_admin_login.sql
 ├── functions/api/
-│   ├── _shared.js                Shared API validation/helpers
-│   ├── events.js                 Public configured event details
-│   ├── inventory.js              Shared availability endpoint
-│   ├── orders.js                 Atomic demo order creation
-│   ├── orders/[id].js            Order lookup for ticket confirmation
+│   ├── _shared.js                    Shared validation, session, and response helpers
+│   ├── events.js                     Public event configuration endpoint
+│   ├── inventory.js                  Shared inventory endpoint
+│   ├── orders.js                     Server-validated order creation
+│   ├── orders/[id].js                Order lookup for confirmation
 │   └── admin/
-│       ├── session.js            Organizer login, signed session, and logout
-│       └── events.js             Authenticated event settings editor
+│       ├── session.js                Organizer login, session, and logout
+│       └── events.js                 Authenticated event management API
 ├── src/
-│   ├── app.js                    Hash-based routes, screens, and interactions
-│   ├── events.js                 Event details, pricing, schedules, and seat-map data
-│   └── inventory.js              Client for the Worker ticket API
+│   ├── app.js                        Pages, navigation, seat map, and interactions
+│   ├── events.js                     Default event and seat-map data
+│   └── inventory.js                  Browser client for the Worker API
 └── assets/
     ├── colegio-maya-logo-white.webp
     ├── apple-wallet-badge.png
-    ├── maya-show-costumes.webp
-    ├── maya-show-dance.webp
-    └── maya-show-stage.webp
+    └── maya-show-*.webp               Student show photography
 ```
 
-The application mounts inside `#pitz-pass`. Its hash routes include:
+The app mounts in `#pitz-pass`, uses hash routes, and prefixes CSS classes with `pp-` to keep its styles distinct. Main routes are:
 
-- `#/` — event landing page
-- `#/maya-show-info` — Maya Show schedule and entry information
-- `#/organizer` — organizer login and event editor
-- `#/event/<event-id>` — event ticket selection
-- `#/checkout` — simulated checkout
-- `#/confirmation/<order-id>` — demo ticket confirmation
+| Route | Page |
+| --- | --- |
+| `#/` | Event landing page |
+| `#/maya-show-info` | Maya Show schedule and entry details |
+| `#/event/<event-id>` | Seat selection or admission quantity |
+| `#/checkout` | Simulated checkout |
+| `#/confirmation/<order-id>` | Demo ticket confirmation |
+| `#/organizer` | Organizer login and event editor |
 
-Event details and prices are configured in `src/events.js`. The app uses hash-based navigation and prefixes its CSS classes with `pp-` to help keep it self-contained. This structure supports future integration as a linked ticketing site, an iframe, or a school-site component backed by an API.
+## Data and privacy
 
-## Current demo events
+- D1 stores attendee names and email addresses, event/order information, ticket assignments, and organizer event settings.
+- Anyone with a valid order-confirmation URL can view that order. Share confirmation links only with the ticket holder.
+- The card form accepts only the displayed test card. Card and billing fields are not sent to the Worker or stored. **Do not enter real payment details.**
+- Payments are not processed, confirmation emails are not sent, and demo QR codes cannot be checked in.
+- Do not clear or recreate the shared D1 database to reset a demo unless you intend to permanently delete all orders and reservations.
 
-| Event | Date | Venue | Ticket type | Demo price |
-| --- | --- | --- | --- | --- |
-| Maya Show — Primary | May 27, 2027, 5:00 PM | Teatro Presidente | Assigned seating | $12 |
-| Maya Show — Secondary | May 27, 2027, 7:30 PM | Teatro Presidente | Assigned seating | $14 |
-| Family Fest | February 6, 2027 | Colegio Maya campus | General admission | $1 |
+## Production readiness
 
-For the Maya Show, students arrive 30 minutes before their showtime. Attendees are asked to have their ticket ready for entry. Family Fest has no time listed because no event time has been configured.
+This application is a functional demo, not a production-ready ticketing service. Before using it for real sales or venue entry, the school should arrange:
 
-The supplied Teatro Presidente chart provides 1,410 numbered seats. Its printed capacity is 1,411; the extra unnumbered seat is not offered in the demo. Primary and Secondary have separate demo inventory.
-
-## Demo data and privacy
-
-Orders, attendee names and email addresses, and ticket assignments are stored in the shared Cloudflare D1 database. Anyone with a valid order-confirmation URL can view that order, so share confirmation links only with the ticket holder. Ticket availability is public. This demo does not include an organizer dashboard or tools to delete/cancel orders.
-
-The card form accepts only the test values displayed in checkout. Card and billing fields are not sent to the Worker or saved, but **do not enter real payment details**. No charge is made, no confirmation email is sent, and QR codes and wallet-style tickets are visual previews only.
-
-The shared D1 database persists across visitors, browsers, and devices. Do not clear the database to reset a demo while it is in use: this permanently removes shared orders and ticket reservations.
-
-Organizer event changes are also shared through D1. The username is fixed as `admin`; the password and signing key are Cloudflare Worker secrets (`ADMIN_PASSWORD` and `SESSION_SECRET`), not values in the public website code. Sessions expire after eight hours, use Secure/HttpOnly/SameSite cookies, and failed logins are throttled after five attempts in a 15-minute window. Anyone who can access the Organizer tab can attempt to log in, so use a unique, strong password and keep it private. This simple organizer login is intended for a demo, not as a replacement for school identity management.
-
-## Production considerations
-
-This prototype is not a production ticketing system. Before selling or issuing real tickets:
-
-- Add temporary seat holds with expiration if needed; current seats are committed when the demo order is submitted.
-- Add server-side capacity enforcement if general-admission limits are introduced.
-- Validate ticket availability, quantity, and pricing on the server; never trust totals supplied by the browser.
-- Use an established payment provider’s hosted checkout if payments are introduced. Do not collect or store card details in this app.
-- Issue unique server-verified ticket identifiers and add a secure check-in process.
-- Add appropriate organizer access controls, order management, cancellation/refund handling, and confirmation delivery.
-- Confirm event details, seating/accessibility requirements, privacy practices, and school approval before launch.
+- A review of privacy requirements and handling of attendee information.
+- A production identity/access system for staff and a protected organizer dashboard.
+- Hosted checkout from an established payment provider; never handle card credentials directly.
+- Seat holds with expiry, cancellation/refund processes, and order-management tools.
+- Server-verified ticket credentials and a secure check-in flow to prevent reuse.
+- Capacity limits for general admission where required.
+- Verified event details, seating/accessibility requirements, operational support, and database backup/recovery procedures.
 
 ## License
 
-No license has been specified for this project. Ask the project owner before reusing or redistributing it.
+No license has been specified for this project. Contact the project owner before reusing or redistributing it.
