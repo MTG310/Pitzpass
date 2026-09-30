@@ -2,6 +2,7 @@ import { onRequestGet as getInventory } from "./functions/api/inventory.js";
 import { onRequestGet as getEvents } from "./functions/api/events.js";
 import { onRequestGet as getOrder } from "./functions/api/orders/[id].js";
 import { onRequestPost as placeOrder } from "./functions/api/orders.js";
+import { onRequestPost as createSeatHold, onRequestDelete as releaseSeatHold } from "./functions/api/holds.js";
 import { onRequestGet as getAdminSession, onRequestPost as loginAdmin, onRequestDelete as logoutAdmin } from "./functions/api/admin/session.js";
 import { onRequestGet as getAdminEvents, onRequestPut as updateAdminEvent } from "./functions/api/admin/events.js";
 import { onRequestGet as getAdminSales } from "./functions/api/admin/sales.js";
@@ -16,6 +17,12 @@ export default {
 			}
 			if (url.pathname === "/api/inventory" && request.method === "GET") {
 				return getInventory({ request, env });
+			}
+			if (url.pathname === "/api/holds" && request.method === "POST") {
+				return createSeatHold({ request, env });
+			}
+			if (url.pathname === "/api/holds" && request.method === "DELETE") {
+				return releaseSeatHold({ request, env });
 			}
 			if (url.pathname === "/api/admin/session" && request.method === "GET") {
 				return getAdminSession({ request, env });

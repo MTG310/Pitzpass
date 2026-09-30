@@ -12,12 +12,16 @@ export async function onRequestGet({ request, env }) {
 		const seats = await env.DB.prepare(
 			"SELECT seat_id FROM tickets WHERE event_id = ? AND seat_id IS NOT NULL"
 		).bind(event.id).all();
+		const holds = await env.DB.prepare(
+			"SELECT seat_id FROM seat_holds WHERE event_id = ? AND expires_at > ?"
+		).bind(event.id, new Date().toISOString()).all();
 		const admission = await env.DB.prepare(
 			"SELECT COUNT(*) AS admitted FROM tickets WHERE event_id = ? AND seat_id IS NULL"
 		).bind(event.id).first();
 
 		return json({
 			reservedSeats: seats.results.map((ticket) => ticket.seat_id),
+			heldSeats: holds.results.map((hold) => hold.seat_id),
 			admitted: Number(admission.admitted)
 		});
 	} catch (error) {

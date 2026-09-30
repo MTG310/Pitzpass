@@ -55,12 +55,31 @@ export async function onRequestPost({ request, env }) {
 		) {
 			return json({ error: "Choose valid, available seats before placing the order.", code: "INVALID_SEATS" }, 400);
 		}
+		if (typeof body.holdId !== "string" || !/^[0-9a-f-]{36}$/i.test(body.holdId)) {
+			return json({ error: "Your seat hold is missing. Return to the seat map and start checkout again.", code: "SEAT_HOLD_EXPIRED" }, 409);
+		}
 	} else if (seatIds.length !== 0) {
 		return json({ error: "General-admission tickets cannot have assigned seats.", code: "INVALID_SEATS" }, 400);
 	}
 
 	const orderId = `PP-${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;
 	const createdAt = new Date().toISOString();
+	if (event.type === "seated") {
+		try {
+			const ownedHolds = await env.DB.prepare(
+				"SELECT seat_id FROM seat_holds WHERE hold_id = ? AND event_id = ? AND expires_at > ?"
+			).bind(body.holdId, event.id, createdAt).all();
+			const heldSeats = new Set(ownedHolds.results.map((hold) => hold.seat_id));
+			if (heldSeats.size !== seatIds.length || seatIds.some((seatId) => !heldSeats.has(seatId))) {
+				return json({
+					error: "Your seat hold is missing or expired. Return to the seat map and start checkout again.",
+					code: "SEAT_HOLD_EXPIRED"
+				}, 409);
+			}
+		} catch (error) {
+			return internalError(error);
+		}
+	}
 	const ticketInserts = Array.from({ length: body.quantity }, (_, index) =>
 		env.DB.prepare(
 			"INSERT INTO tickets (ticket_id, order_id, event_id, seat_id, ticket_number) VALUES (?, ?, ?, ?, ?)"
@@ -72,8 +91,39 @@ export async function onRequestPost({ request, env }) {
 			index + 1
 		)
 	);
-	const statements = [
-		env.DB.prepare(
+	const holdCondition = event.type === "seated"
+		? `WHERE (SELECT COUNT(*) FROM seat_holds WHERE hold_id = ? AND event_id = ? AND expires_at > ?) = ?
+			AND NOT EXISTS (
+				SELECT 1 FROM json_each(?) AS selected
+				WHERE NOT EXISTS (
+					SELECT 1 FROM seat_holds
+					WHERE hold_id = ? AND event_id = ? AND seat_id = selected.value AND expires_at > ?
+				)
+			)`
+		: "";
+	const orderInsert = event.type === "seated"
+		? env.DB.prepare(
+			`INSERT INTO orders (id, event_id, customer_name, customer_email, payment_method, total_cents, quantity, created_at)
+			SELECT ?, ?, ?, ?, ?, ?, ?, ? ${holdCondition}`
+		).bind(
+			orderId,
+			event.id,
+			body.customer.name.trim(),
+			body.customer.email.trim(),
+			body.paymentMethod,
+			event.priceCents * body.quantity,
+			body.quantity,
+			createdAt,
+			body.holdId,
+			event.id,
+			createdAt,
+			body.quantity,
+			JSON.stringify(seatIds),
+			body.holdId,
+			event.id,
+			createdAt
+		)
+		: env.DB.prepare(
 			"INSERT INTO orders (id, event_id, customer_name, customer_email, payment_method, total_cents, quantity, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 		).bind(
 			orderId,
@@ -84,14 +134,25 @@ export async function onRequestPost({ request, env }) {
 			event.priceCents * body.quantity,
 			body.quantity,
 			createdAt
-		),
+		);
+	const statements = [
+		orderInsert,
+		...(event.type === "seated"
+			? [env.DB.prepare("DELETE FROM seat_holds WHERE hold_id = ? AND event_id = ?").bind(body.holdId, event.id)]
+			: []),
 		...ticketInserts
 	];
 
 	try {
 		await env.DB.batch(statements);
 	} catch (error) {
-		if (event.type === "seated" && /unique|constraint/i.test(error.message)) {
+		if (event.type === "seated" && /foreign key constraint failed/i.test(error.message)) {
+			return json({
+				error: "Your 6-minute seat hold expired. Return to the seat map and start checkout again.",
+				code: "SEAT_HOLD_EXPIRED"
+			}, 409);
+		}
+		if (event.type === "seated" && /unique constraint|seat currently held/i.test(error.message)) {
 			return json({
 				error: "One or more seats were just taken on another device. Please refresh the seat map and choose different seats.",
 				code: "SEATS_UNAVAILABLE"

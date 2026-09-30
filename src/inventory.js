@@ -47,6 +47,19 @@ export function placeOrder(details) {
 	});
 }
 
+export function createSeatHold(details) {
+	return apiRequest("/api/holds", {
+		method: "POST",
+		body: JSON.stringify(details)
+	});
+}
+
+export function releaseSeatHold(holdId) {
+	return apiRequest(`/api/holds?holdId=${encodeURIComponent(holdId)}`, {
+		method: "DELETE"
+	});
+}
+
 export function getAdminSession() {
 	return apiRequest("/api/admin/session");
 }

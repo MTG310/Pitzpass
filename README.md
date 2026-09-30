@@ -1,4 +1,11 @@
-# Pitz Pass
+<h1 align="center">Pitz Pass</h1>
+
+<p align="center"><strong>School event tickets, made simple for the Colegio Maya community.</strong><br>
+Browse upcoming events · Choose auditorium seats · Check out with a demo payment</p>
+
+<p align="center"><img src="assets/readme-homepage.png" width="960" alt="Pitz Pass event landing page featuring the Maya Show"></p>
+
+<p align="center"><a href="https://pp-website.kh6hb9smyy.workers.dev/">Visit Pitz Pass</a> · <a href="#features">Explore features</a> · <a href="#run-locally">Run locally</a></p>
 
 **Pitz Pass** is a responsive school-event ticketing website for Colegio Maya. Families can browse school events, check event schedules, select auditorium seats or general-admission tickets, and complete a simulated checkout. Organizers can sign in to update event information.
 
@@ -31,6 +38,7 @@ The site is built with browser-native HTML, CSS, and JavaScript and runs as a Cl
   - Interactive Teatro Presidente seating map with section and row labels.
   - Zoom, pan, overview, keyboard-accessible seat selection, and selected-seat summaries.
   - Available and taken seat states.
+  - A 6-minute server-side seat hold begins when checkout starts, with a visible countdown and automatic release on expiration or when returning to seat selection.
 - General-admission quantity selection for Family Fest.
 - Checkout with simulated Apple Pay, Google Pay, or a demo-only card form.
 - Order confirmation with a separate wallet-style pass and QR preview for each ticket.
@@ -40,6 +48,7 @@ The site is built with browser-native HTML, CSS, and JavaScript and runs as a Cl
 
 - Cloudflare D1 stores orders, ticket assignments, event settings, and login rate limits.
 - Database uniqueness constraints prevent the same assigned seat from being ordered twice.
+- Active seat holds are shared across visitors, expire after 6 minutes, and are checked atomically when an order is created.
 - The server validates selected seats, quantity, event, and price before creating an order.
 - Availability refreshes while an event page is open and when a visitor returns to the tab.
 - Organizer tab with password-protected sign-in and an event editor for titles, show labels, dates, times, student arrival times, venues, prices, and descriptions.
@@ -142,7 +151,7 @@ The dashboard currently edits existing events; it does not create or delete even
 
 ## How ticket availability works
 
-The browser requests shared inventory from the Worker API. When checkout submits an order, the Worker validates the event and selection, calculates the total from server-side event data, and writes the order and its tickets to D1. A database uniqueness constraint on `(event_id, seat_id)` rejects duplicate seat orders, including concurrent attempts from different devices.
+The browser requests shared inventory from the Worker API. When an attendee continues to checkout, the Worker places a 6-minute hold on each selected seat in D1; other visitors see those seats as unavailable. Returning to seat selection releases the hold, and expired holds stop blocking seats automatically. When checkout submits an order, the Worker validates that the hold belongs to that selection and has not expired, calculates the total from server-side event data, and converts the hold into ticket rows in one database batch. Database constraints reject duplicate holds or seat orders, including concurrent attempts from different devices.
 
 General-admission tickets are stored as individual ticket rows. Family Fest is uncapped in the current demo; add a server-side capacity rule before configuring a capped general-admission event.
 
@@ -158,11 +167,13 @@ General-admission tickets are stored as individual ticket rows. Family Fest is u
 ├── .gitignore                        Excludes local secrets and generated files from Git
 ├── migrations/
 │   ├── 0001_initial.sql              Orders and ticket inventory schema
-│   └── 0002_event_settings_and_admin_login.sql
+│   ├── 0002_event_settings_and_admin_login.sql
+│   └── 0003_seat_holds.sql           Expiring assigned-seat holds
 ├── functions/api/
 │   ├── _shared.js                    Shared validation, session, and response helpers
 │   ├── events.js                     Public event configuration endpoint
 │   ├── inventory.js                  Shared inventory endpoint
+│   ├── holds.js                      Create and release temporary seat holds
 │   ├── orders.js                     Server-validated order creation
 │   ├── orders/[id].js                Order lookup for confirmation
 │   └── admin/
@@ -205,7 +216,7 @@ This application is a functional demo, not a production-ready ticketing service.
 - A review of privacy requirements and handling of attendee information.
 - A production identity/access system for staff and a protected organizer dashboard.
 - Hosted checkout from an established payment provider; never handle card credentials directly.
-- Seat holds with expiry, cancellation/refund processes, and order-management tools.
+- Production-grade holds tied to authenticated checkout sessions, cancellation/refund processes, and order-management tools.
 - Server-verified ticket credentials and a secure check-in flow to prevent reuse.
 - Capacity limits for general admission where required.
 - Verified event details, seating/accessibility requirements, operational support, and database backup/recovery procedures.

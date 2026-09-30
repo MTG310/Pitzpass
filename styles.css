@@ -200,6 +200,9 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .pp-checkout-heading .pp-eyebrow { margin-bottom: 9px; }
 .pp-checkout-heading h1 { font-size: 39px; }
 .pp-checkout-heading > p:last-child { margin: 8px 0 0; color: var(--pp-muted); font-size: 12px; }
+.pp-seat-hold-notice { margin: -10px 0 18px; padding: 12px 15px; border: 1px solid #dce7c4; border-radius: 7px; background: #f4f8eb; color: #4e6133; font-size: 11px; line-height: 1.5; }
+.pp-seat-hold-notice strong { color: #304c1d; font-variant-numeric: tabular-nums; }
+.pp-seat-hold-notice a { color: #304c1d; font-weight: 700; }
 .pp-checkout-form { padding: 24px; }
 .pp-form-section + .pp-form-section { margin-top: 27px; padding-top: 23px; border-top: 1px solid var(--pp-line); }
 .pp-form-title { margin-bottom: 17px; display: flex; align-items: flex-start; gap: 12px; }

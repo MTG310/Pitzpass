@@ -8,7 +8,9 @@ import {
 	getOrder,
 	loginAdmin,
 	logoutAdmin,
+	createSeatHold,
 	placeOrder,
+	releaseSeatHold,
 	updateAdminEvent
 } from "./inventory.js";
 
@@ -38,6 +40,10 @@ const state = {
 	paymentMethod: "apple",
 	customerName: "",
 	customerEmail: "",
+	holdId: "",
+	holdExpiresAt: "",
+	holdLoading: false,
+	holdExpired: false,
 	notice: "",
 	busy: false,
 	inventory: null,
@@ -336,12 +342,15 @@ async function refreshEventInventory(eventId) {
 	try {
 		const inventory = await getInventory(eventId);
 		if (state.eventId !== eventId || currentRoute().name !== "event") return;
-		const currentSeats = state.inventory?.reservedSeats ?? [];
-		const updatedSeats = inventory.reservedSeats ?? [];
+		const currentSeats = [
+			...(state.inventory?.reservedSeats ?? []),
+			...(state.inventory?.heldSeats ?? [])
+		];
+		const updatedSeats = [...(inventory.reservedSeats ?? []), ...(inventory.heldSeats ?? [])];
 		const unavailableSelections = [...state.selectedSeats].filter((seat) => updatedSeats.includes(seat));
 		unavailableSelections.forEach((seat) => state.selectedSeats.delete(seat));
 		if (unavailableSelections.length) {
-			state.notice = "A selected seat was just reserved by someone else. Please choose another seat.";
+			state.notice = "A selected seat was just sold or held by someone else. Please choose another seat.";
 		}
 		const unchanged = state.inventory &&
 			state.inventory.admitted === inventory.admitted &&
@@ -354,6 +363,22 @@ async function refreshEventInventory(eventId) {
 		if (state.eventId !== eventId || currentRoute().name !== "event") return;
 		state.notice = "Live availability could not be refreshed. Your ticket choice will still be checked at checkout.";
 		render();
+	}
+}
+
+async function releaseActiveSeatHold() {
+	const holdId = state.holdId;
+	if (!holdId) return;
+	state.holdId = "";
+	state.holdExpiresAt = "";
+	state.holdExpired = false;
+	try {
+		await releaseSeatHold(holdId);
+	} catch (error) {
+		if (currentRoute().name === "event") {
+			state.notice = `Your seat hold could not be released immediately and will expire automatically. ${error.message}`;
+			render();
+		}
 	}
 }
 
@@ -578,7 +603,7 @@ function renderMayaShowInfo() {
 }
 
 function renderSeatMap(event, inventory) {
-	const reserved = new Set(inventory.reservedSeats);
+	const reserved = new Set([...inventory.reservedSeats, ...(inventory.heldSeats ?? [])]);
 	const seatLevel = state.mapView.height <= 750;
 	const overviewSections = [
 		{ id: "C1", x: 54, width: 246 },
@@ -656,8 +681,10 @@ function renderSeatMap(event, inventory) {
 
 function renderEvent(event) {
 	const inventory = state.inventory;
-	const sold = event.type === "seated" ? inventory.reservedSeats.length : inventory.admitted;
-	const remaining = event.ticketCapacity === null ? Infinity : Math.max(0, event.ticketCapacity - sold);
+	const unavailableSeatCount = event.type === "seated"
+		? new Set([...inventory.reservedSeats, ...(inventory.heldSeats ?? [])]).size
+		: inventory.admitted;
+	const remaining = event.ticketCapacity === null ? Infinity : Math.max(0, event.ticketCapacity - unavailableSeatCount);
 	const selectionCount = event.type === "seated" ? state.selectedSeats.size : state.quantity;
 	const totalCents = event.priceCents * selectionCount;
 	const soldOut = remaining === 0;
@@ -688,7 +715,7 @@ function renderEvent(event) {
 					<div class="pp-order-selected"><span>${event.type === "seated" ? `Tickets selected · ${state.selectedSeats.size}` : "Tickets"}</span><div>${selectedLabel}</div></div>
 					<div class="pp-order-total"><span>Subtotal</span><strong>${formatPrice(totalCents)}</strong></div>
 					${state.notice ? `<p class="pp-inline-error" role="alert">${escapeHTML(state.notice)}</p>` : ""}
-					<button class="pp-button pp-button--navy pp-continue" type="button" data-action="checkout" ${selectionCount < 1 || soldOut ? "disabled" : ""}>Continue to checkout <span aria-hidden="true">→</span></button>
+					<button class="pp-button pp-button--navy pp-continue" type="button" data-action="checkout" ${selectionCount < 1 || soldOut || state.holdLoading ? "disabled" : ""}>${state.holdLoading ? "Holding your seats…" : "Continue to checkout"} <span aria-hidden="true">→</span></button>
 					<p class="pp-secure-note">No payment is collected in this demo.</p>
 				</aside>
 			</div>
@@ -715,11 +742,17 @@ function renderCheckout(event) {
 			<label class="pp-field">Postal code<input name="billingPostal" autocomplete="off" placeholder="Postal code" required maxlength="16"></label>
 			<label class="pp-field pp-card-field--full">Country / region<select name="billingCountry" required><option value="SV" selected>El Salvador</option><option value="US">United States</option><option value="GT">Guatemala</option><option value="HN">Honduras</option><option value="NI">Nicaragua</option><option value="CR">Costa Rica</option><option value="OTHER">Other</option></select></label>
 		</div>` : "";
+	const holdStatus = event.type === "seated"
+		? `<p class="pp-seat-hold-notice" role="status">${state.holdExpired
+			? `Your seat hold expired. <a href="#/event/${event.id}">Return to seat selection</a> to choose seats again.`
+			: `Your selected seats are held for <strong data-hold-countdown>6:00</strong>. Complete checkout before the timer expires.`}</p>`
+		: "";
 
 	return `
 		<main class="pp-page pp-checkout-page">
 			<a class="pp-back-link" href="#/event/${event.id}">← Back to ticket selection</a>
 			<div class="pp-checkout-heading"><p class="pp-eyebrow pp-eyebrow--dark">ALMOST THERE</p><h1>Secure checkout</h1><p>Review your details and complete this demo order.</p></div>
+			${holdStatus}
 			<div class="pp-checkout-layout">
 				<form class="pp-checkout-form" id="checkout-form">
 					<section class="pp-form-section"><div class="pp-form-title"><span>01</span><div><h2>Your details</h2><p>We’ll send your confirmation here.</p></div></div><label class="pp-field">Full name<input name="name" autocomplete="name" placeholder="Your name" value="${escapeHTML(state.customerName)}" required maxlength="100"></label><label class="pp-field">Email address<input name="email" type="email" autocomplete="email" placeholder="you@example.com" value="${escapeHTML(state.customerEmail)}" required maxlength="254"></label></section>
@@ -728,7 +761,7 @@ function renderCheckout(event) {
 						<div class="pp-demo-payment"><span class="pp-lock">⌑</span><span><strong>${walletLabel} demo</strong><small>Demo only. No payment is processed. Card fields are never saved or sent.</small></span><span class="pp-demo-tag">DEMO</span></div>
 					</section>
 					${state.notice ? `<p class="pp-inline-error" role="alert">${escapeHTML(state.notice)}</p>` : ""}
-					<button class="pp-button pp-button--lime pp-place-order" type="submit" ${state.busy ? "disabled" : ""}>${state.busy ? "Completing demo order…" : `Pay ${formatPrice(totalCents)} · Demo`}</button>
+					<button class="pp-button pp-button--lime pp-place-order" type="submit" ${state.busy || state.holdExpired ? "disabled" : ""}>${state.busy ? "Completing demo order…" : `Pay ${formatPrice(totalCents)} · Demo`}</button>
 				</form>
 				<aside class="pp-order-card pp-checkout-summary"><p class="pp-eyebrow pp-eyebrow--dark">ORDER SUMMARY</p><h2>${escapeHTML(event.title)}</h2><p class="pp-summary-session">${escapeHTML(event.session)}</p><div class="pp-summary-detail">${escapeHTML(formatEventDate(event))}${event.time ? `<br>${escapeHTML(formatEventTime(event))}` : ""}<br>${escapeHTML(event.venue.name)}</div><div class="pp-summary-ticket"><span>${escapeHTML(ticketLine)}</span><strong>${formatPrice(totalCents)}</strong></div><div class="pp-order-total"><span>Total</span><strong>${formatPrice(totalCents)}</strong></div><p class="pp-secure-note">This is a simulation; no money will be charged.</p></aside>
 			</div>
@@ -786,6 +819,9 @@ function render() {
 				if (state.eventId !== event.id) {
 					state.eventId = event.id;
 					state.selectedSeats.clear();
+					state.holdId = "";
+					state.holdExpiresAt = "";
+					state.holdExpired = false;
 					state.sectionId = "C3-upper";
 					state.mapView = fullMapView();
 					state.quantity = 1;
@@ -811,9 +847,12 @@ function render() {
 			page = renderOrganizer();
 		} else if (route.name === "checkout") {
 			const event = eventById(state.eventId);
-			page = event && (event.type === "general" ? state.quantity > 0 : state.selectedSeats.size > 0)
+			const selectionReady = event && (event.type === "general"
+				? state.quantity > 0
+				: state.selectedSeats.size > 0 && state.holdId && !state.holdExpired);
+			page = selectionReady
 				? renderCheckout(event)
-				: `<main class="pp-page pp-empty-state"><strong>Your ticket selection is empty.</strong><span>Choose a show and tickets to continue.</span><a class="pp-button pp-button--navy" href="#/">Browse shows</a></main>`;
+				: `<main class="pp-page pp-empty-state"><strong>${event && state.selectedSeats.size ? "Your seat hold is not active." : "Your ticket selection is empty."}</strong><span>Return to the seat map to choose seats and start checkout.</span><a class="pp-button pp-button--navy" href="${event ? `#/event/${event.id}` : "#/"}">Choose tickets</a></main>`;
 		} else if (route.name === "confirmation") {
 			if (state.confirmationOrderId !== route.id) {
 				state.confirmationOrderId = route.id;
@@ -857,6 +896,7 @@ app.addEventListener("click", async (event) => {
 
 	const removeSeatButton = event.target.closest("[data-remove-seat]");
 	if (removeSeatButton) {
+		if (state.holdLoading) return;
 		state.selectedSeats.delete(removeSeatButton.dataset.removeSeat);
 		state.notice = "";
 		render();
@@ -879,6 +919,7 @@ app.addEventListener("click", async (event) => {
 
 	const seatButton = event.target.closest("[data-seat]");
 	if (seatButton && !seatButton.disabled) {
+		if (state.holdLoading) return;
 		if (seatButton.classList.contains("is-taken")) return;
 		const seat = seatButton.dataset.seat;
 		state.selectedSeats.has(seat) ? state.selectedSeats.delete(seat) : state.selectedSeats.add(seat);
@@ -931,6 +972,44 @@ app.addEventListener("click", async (event) => {
 
 	if (event.target.closest('[data-action="checkout"]')) {
 		state.notice = "";
+		const currentEvent = eventById(state.eventId);
+		if (currentEvent?.type === "seated") {
+			if (state.holdLoading) return;
+			const holdId = crypto.randomUUID();
+			const seatIds = [...state.selectedSeats];
+			state.holdLoading = true;
+			render();
+			try {
+				const hold = await createSeatHold({ eventId: currentEvent.id, seatIds, holdId });
+				state.holdLoading = false;
+				if (currentRoute().name !== "event" || state.eventId !== currentEvent.id) {
+					await releaseSeatHold(hold.holdId);
+					render();
+					return;
+				}
+				state.holdId = hold.holdId;
+				state.holdExpiresAt = hold.expiresAt;
+				state.holdExpired = false;
+				location.hash = "#/checkout";
+			} catch (error) {
+				state.holdLoading = false;
+				state.notice = error.message;
+				if (error.code === "SEATS_UNAVAILABLE") {
+					try {
+						const inventory = await getInventory(currentEvent.id);
+						const unavailable = new Set([...inventory.reservedSeats, ...(inventory.heldSeats ?? [])]);
+						for (const seatId of seatIds) {
+							if (unavailable.has(seatId)) state.selectedSeats.delete(seatId);
+						}
+						state.inventory = inventory;
+					} catch (refreshError) {
+						state.notice = `${error.message} Live availability could not be refreshed: ${refreshError.message}`;
+					}
+				}
+				render();
+			}
+			return;
+		}
 		location.hash = "#/checkout";
 		return;
 	}
@@ -1168,6 +1247,7 @@ app.addEventListener("submit", async (event) => {
 		const order = await placeOrder({
 			eventId: currentEvent.id,
 			seatIds: [...state.selectedSeats],
+			...(currentEvent.type === "seated" ? { holdId: state.holdId } : {}),
 			quantity,
 			customer: { name: formData.get("name"), email: formData.get("email") },
 			paymentMethod: state.paymentMethod
@@ -1177,19 +1257,27 @@ app.addEventListener("submit", async (event) => {
 		state.quantity = 1;
 		state.customerName = "";
 		state.customerEmail = "";
+		state.holdId = "";
+		state.holdExpiresAt = "";
+		state.holdExpired = false;
 		location.hash = `#/confirmation/${order.id}`;
 	} catch (error) {
 		state.busy = false;
 		state.notice = error.message;
+		if (error.code === "SEAT_HOLD_EXPIRED") {
+			state.holdExpired = true;
+			state.holdId = "";
+			state.holdExpiresAt = "";
+		}
 		if (error.code === "SEATS_UNAVAILABLE") {
 			try {
 				const inventory = await getInventory(currentEvent.id);
-				const reservedSeats = new Set(inventory.reservedSeats);
-				const unavailableSelections = [...state.selectedSeats].filter((seat) => reservedSeats.has(seat));
+				const unavailableSeats = new Set([...inventory.reservedSeats, ...(inventory.heldSeats ?? [])]);
+				const unavailableSelections = [...state.selectedSeats].filter((seat) => unavailableSeats.has(seat));
 				unavailableSelections.forEach((seat) => state.selectedSeats.delete(seat));
 				state.inventory = inventory;
 				if (unavailableSelections.length) {
-					state.notice = "One or more selected seats were just reserved by someone else. They have been removed from your order.";
+					state.notice = "One or more selected seats were just sold or held by someone else. They have been removed from your order.";
 				}
 			} catch (refreshError) {
 				state.notice = `${error.message} Live availability could not be refreshed: ${refreshError.message}`;
@@ -1199,9 +1287,14 @@ app.addEventListener("submit", async (event) => {
 	}
 });
 
-window.addEventListener("hashchange", render);
 window.addEventListener("hashchange", () => {
-	if (currentRoute().name === "event" && state.eventId) void refreshEventInventory(state.eventId);
+	const route = currentRoute();
+	const release = route.name !== "checkout" && state.holdId ? releaseActiveSeatHold() : null;
+	render();
+	if (route.name === "event" && state.eventId) {
+		if (release) void release.then(() => refreshEventInventory(state.eventId));
+		else void refreshEventInventory(state.eventId);
+	}
 });
 window.addEventListener("focus", () => {
 	if (currentRoute().name === "event" && state.eventId) void refreshEventInventory(state.eventId);
@@ -1209,6 +1302,19 @@ window.addEventListener("focus", () => {
 window.setInterval(() => {
 	if (currentRoute().name === "event" && state.eventId) void refreshEventInventory(state.eventId);
 }, 15000);
+window.setInterval(() => {
+	if (currentRoute().name !== "checkout" || !state.holdExpiresAt) return;
+	const remaining = Math.max(0, Math.ceil((Date.parse(state.holdExpiresAt) - Date.now()) / 1000));
+	const countdown = app.querySelector("[data-hold-countdown]");
+	if (countdown) countdown.textContent = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
+	if (remaining === 0 && !state.holdExpired) {
+		state.holdExpired = true;
+		state.holdId = "";
+		state.holdExpiresAt = "";
+		state.notice = "Your 6-minute seat hold expired. Return to the seat map and start checkout again.";
+		render();
+	}
+}, 1000);
 
 getEvents().then((events) => {
 	applyEventSettings(events);
