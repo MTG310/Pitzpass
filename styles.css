@@ -34,7 +34,17 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .pp-nav { display: flex; gap: 38px; align-items: center; color: #7d8798; font-size: 13px; font-weight: 600; }
 .pp-nav a { transition: color .2s ease; }
 .pp-nav a:hover, .pp-help:hover { color: var(--pp-ink); }
-.pp-help { color: #657087; font-size: 12px; font-weight: 700; }
+.pp-language-switcher { position: relative; flex: 0 0 auto; }
+.pp-language-trigger { min-height: 40px; padding: 0 10px; display: flex; align-items: center; gap: 7px; border: 1px solid #e5e8ed; border-radius: 7px; background: white; color: var(--pp-ink); font-size: 12px; font-weight: 700; cursor: pointer; }
+.pp-language-trigger:hover, .pp-language-trigger[aria-expanded="true"] { border-color: #c7d1e2; background: #f8faff; }
+.pp-language-flag { font-size: 18px; line-height: 1; }
+.pp-language-chevron { color: #748198; font-size: 14px; }
+.pp-language-menu { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; width: 148px; padding: 6px; border: 1px solid #e8ebf0; border-radius: 9px; background: white; box-shadow: 0 12px 32px #15274324; }
+.pp-language-menu[hidden] { display: none; }
+.pp-language-menu button { width: 100%; min-height: 42px; padding: 0 9px; display: flex; align-items: center; gap: 10px; border: 0; border-radius: 6px; background: transparent; color: var(--pp-ink); text-align: left; font-size: 12px; cursor: pointer; }
+.pp-language-menu button:hover, .pp-language-menu button[aria-pressed="true"] { background: #f0f4fa; }
+.pp-language-menu button span:first-child { font-size: 19px; }
+.pp-language-menu button span:last-child { font-weight: 700; }
 
 .pp-hero { min-height: 530px; position: relative; display: grid; grid-template-columns: 1fr 1fr; align-items: center; padding: 52px max(10vw, calc((100vw - 1050px) / 2)); overflow: hidden; background: #182644; color: white; }
 .pp-hero:before { content: ""; position: absolute; width: 630px; height: 630px; border: 1px solid #ffffff12; border-radius: 50%; top: -310px; left: 50%; }
@@ -225,6 +235,13 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .pp-demo-payment strong, .pp-demo-payment small { display: block; }
 .pp-demo-payment strong { color: #46556e; font-size: 10px; }
 .pp-demo-payment small { margin-top: 3px; color: #8490a2; font-size: 9px; line-height: 1.5; }
+.pp-demo-qr { margin-top: 14px; padding: 14px; display: flex; align-items: center; gap: 14px; border: 1px solid var(--pp-line); border-radius: 7px; background: #fbfcfe; }
+.pp-demo-qr-image { width: 112px; height: 112px; flex: 0 0 112px; padding: 5px; border: 1px solid #e7ebf1; border-radius: 5px; background: #fff; }
+.pp-demo-qr-image svg { display: block; width: 100%; height: 100%; }
+.pp-demo-qr strong { color: var(--pp-ink); font-size: 11px; }
+.pp-demo-qr p { margin: 5px 0; color: #65738a; font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; }
+.pp-demo-qr code { color: var(--pp-ink); font-size: 9px; }
+.pp-demo-qr small { color: #8490a2; font-size: 9px; line-height: 1.5; }
 .pp-demo-tag { color: #818da0; font-size: 8px; font-weight: 800; letter-spacing: 1px; }
 .pp-demo-card-notice { margin-top: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; border: 1px solid #ecdcae; border-radius: 7px; background: #fff9e9; color: #6f5b2e; font-size: 10px; line-height: 1.5; }
 .pp-demo-card-notice strong { font-size: 11px; }
@@ -353,7 +370,9 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 	.pp-brand { font-size: 17px; }
 	.pp-mark { width: 30px; height: 30px; }
 	.pp-nav { gap: 16px; font-size: 11px; }
-	.pp-help { display: none; }
+	.pp-language-trigger { min-height: 36px; padding: 0 7px; gap: 4px; font-size: 10px; }
+	.pp-language-flag { font-size: 16px; }
+	.pp-nav { gap: 12px; }
 	.pp-hero { min-height: 640px; grid-template-columns: 1fr; align-content: start; padding: 60px 8% 45px; }
 	.pp-hero h1 { font-size: clamp(38px, 10.5vw, 54px); letter-spacing: -3px; }
 	.pp-hero-art { width: 100%; height: 250px; justify-self: center; margin-top: 18px; }
@@ -394,6 +413,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 	.pp-checkout-summary { position: static; }
 	.pp-checkout-form { padding: 19px; }
 	.pp-checkout-page .pp-back-link { margin-bottom: 24px; }
+	.pp-demo-qr { align-items: flex-start; flex-direction: column; }
 	.pp-confirm-page { padding-top: 35px; }
 	.pp-wallet-pass { border-radius: 14px; }
 	.pp-wallet-event { padding: 18px 17px 15px; }
@@ -422,6 +442,14 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 	.pp-app--ticketing .pp-seat-legend { bottom: 8px; left: 8px; gap: 9px; padding: 7px 9px; font-size: 8px; }
 	.pp-app--ticketing .pp-map-toolbar { top: 8px; right: 8px; }
 	.pp-app--ticketing .pp-map-controls button { min-width: 30px; height: 30px; }
+}
+@media (max-width: 480px) {
+	.pp-header { padding-right: 10px; padding-left: 10px; }
+	.pp-brand { gap: 5px; font-size: 0; }
+	.pp-mark { width: 28px; height: 28px; }
+	.pp-nav { gap: 8px; font-size: 8px; }
+	.pp-language-trigger { min-height: 34px; padding: 0 5px; gap: 3px; font-size: 9px; }
+	.pp-language-chevron { font-size: 11px; }
 }
 @media (prefers-reduced-motion: reduce) {
 	*, *:before, *:after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }

@@ -13,10 +13,51 @@ import {
 	releaseSeatHold,
 	updateAdminEvent
 } from "./inventory.js";
+import { translateSpanishText } from "./translations.js";
 
 const app = document.querySelector("#pitz-pass");
 const MAP_WIDTH = 1800;
 const MAP_HEIGHT = 930;
+
+function savedLanguage() {
+	try {
+		return localStorage.getItem("pitz-pass-language") === "es" ? "es" : "en";
+	} catch (error) {
+		return "en";
+	}
+}
+
+function locale() {
+	return state.language === "es" ? "es-SV" : "en-US";
+}
+
+function localizeApp() {
+	document.documentElement.lang = state.language;
+	document.title = state.language === "es"
+		? "Pitz Pass | Eventos del Colegio Maya"
+		: "Pitz Pass | Colegio Maya Events";
+	const description = document.querySelector('meta[name="description"]');
+	if (description) {
+		description.content = state.language === "es"
+			? "Encuentra asientos y compra boletos para eventos escolares del Colegio Maya."
+			: "Find your seat and book tickets for Colegio Maya school events.";
+	}
+	if (state.language !== "es") return;
+
+	const walker = document.createTreeWalker(app, NodeFilter.SHOW_TEXT);
+	while (walker.nextNode()) {
+		if (walker.currentNode.parentElement?.closest("code, textarea")) continue;
+		walker.currentNode.textContent = translateSpanishText(walker.currentNode.textContent);
+	}
+
+	for (const element of app.querySelectorAll("[aria-label], [aria-description], [placeholder], [title], img[alt]")) {
+		for (const attribute of ["aria-label", "aria-description", "placeholder", "title", "alt"]) {
+			if (element.hasAttribute(attribute)) {
+				element.setAttribute(attribute, translateSpanishText(element.getAttribute(attribute)));
+			}
+		}
+	}
+}
 
 function mapViewportAspectRatio() {
 	const mobile = window.matchMedia("(max-width: 700px)").matches;
@@ -33,6 +74,8 @@ function fullMapView() {
 }
 
 const state = {
+	language: savedLanguage(),
+	languageMenuOpen: false,
 	eventId: null,
 	selectedSeats: new Set(),
 	sectionId: "",
@@ -40,6 +83,7 @@ const state = {
 	paymentMethod: "apple",
 	customerName: "",
 	customerEmail: "",
+	demoPaymentReference: "",
 	holdId: "",
 	holdExpiresAt: "",
 	holdLoading: false,
@@ -502,6 +546,7 @@ function focusMapSection(sectionId) {
 }
 
 function header() {
+	const spanish = state.language === "es";
 	return `
 		<header class="pp-header">
 			<a class="pp-brand" href="#/" aria-label="Pitz Pass home">${logo}<span>Pitz <strong>Pass</strong></span></a>
@@ -511,7 +556,17 @@ function header() {
 				<a href="#/maya-show-info">Information</a>
 				<a href="#/organizer">Organizer</a>
 			</nav>
-			<a class="pp-help" href="mailto:events@colegiomaya.edu.sv">Need help?</a>
+			<div class="pp-language-switcher">
+				<button class="pp-language-trigger" type="button" data-language-toggle aria-label="Choose language" aria-expanded="${state.languageMenuOpen}">
+					<span class="pp-language-flag" aria-hidden="true">${spanish ? "🇪🇸" : "🇺🇸"}</span>
+					<span>${spanish ? "Español" : "English"}</span>
+					<span class="pp-language-chevron" aria-hidden="true">⌄</span>
+				</button>
+				<div class="pp-language-menu" role="group" aria-label="Choose language" ${state.languageMenuOpen ? "" : "hidden"}>
+					<button type="button" data-language="es" aria-pressed="${spanish}"><span aria-hidden="true">🇪🇸</span><span>Español</span></button>
+					<button type="button" data-language="en" aria-pressed="${!spanish}"><span aria-hidden="true">🇺🇸</span><span>English</span></button>
+				</div>
+			</div>
 		</header>`;
 }
 
@@ -519,7 +574,7 @@ function renderHome() {
 	const cardsFor = (events) => events.map((event, index) => `
 		<a class="pp-event-card ${event.accent === "lime" ? "pp-event-card--lime" : event.accent === "red" ? "pp-event-card--red" : ""}" href="#/event/${event.id}">
 			<div class="pp-card-topline"><span class="pp-pill">${event.type === "seated" ? "Assigned seating" : "General admission"}</span><span class="pp-card-number">0${index + 1}</span></div>
-			<p class="pp-card-date">${escapeHTML(formatEventDate(event))}${event.time ? ` <span>·</span> ${escapeHTML(formatEventTime(event))}` : ""}</p>
+			<p class="pp-card-date">${escapeHTML(formatEventDate(event, locale()))}${event.time ? ` <span>·</span> ${escapeHTML(formatEventTime(event, locale()))}` : ""}</p>
 			<h3>${escapeHTML(event.type === "general" ? event.title : event.session)}</h3>
 			<p class="pp-card-venue">${escapeHTML(event.venue.name)}</p>
 			<div class="pp-card-bottom"><span>From <strong>${formatPrice(event.priceCents)}</strong></span><span class="pp-arrow" aria-hidden="true">↗</span></div>
@@ -566,16 +621,16 @@ function renderMayaShowInfo() {
 		const mayaShows = EVENTS.filter((event) => event.id === "maya-primary" || event.id === "maya-secondary");
 		const mayaTitle = mayaShows[0]?.title ?? "Maya Show";
 		const primaryShow = mayaShows.find((event) => event.id === "maya-primary");
-		const scheduleDate = primaryShow ? formatEventDate(primaryShow).toUpperCase() : "";
+		const scheduleDate = primaryShow ? formatEventDate(primaryShow, locale()).toUpperCase() : "";
 		const venueName = primaryShow?.venue.name ?? "Teatro Presidente";
 		const shows = mayaShows.map((event) => `
 			<article class="pp-schedule-card">
 				<div class="pp-schedule-card-heading">
 					<p class="pp-eyebrow pp-eyebrow--dark">${escapeHTML(event.session)}</p>
-					<h2>${escapeHTML(formatEventTime(event))}</h2>
+					<h2>${escapeHTML(formatEventTime(event, locale()))}</h2>
 				</div>
 				<dl class="pp-schedule-details">
-						<div><dt>Showtime</dt><dd>${escapeHTML(formatEventTime(event))}</dd></div>
+						<div><dt>Showtime</dt><dd>${escapeHTML(formatEventTime(event, locale()))}</dd></div>
 					<div><dt>Student arrival</dt><dd>${escapeHTML(event.studentArrivalTime)}</dd></div>
 					<div><dt>Venue</dt><dd>${escapeHTML(event.venue.name)}</dd></div>
 				</dl>
@@ -588,7 +643,7 @@ function renderMayaShowInfo() {
 				<section class="pp-info-heading">
 					<p class="pp-eyebrow pp-eyebrow--dark">COLEGIO MAYA · EVENT INFORMATION</p>
 					<h1>${escapeHTML(mayaTitle)}</h1>
-					<p>Join us at ${escapeHTML(venueName)} on ${escapeHTML(primaryShow ? formatEventDate(primaryShow) : "")}, for an evening celebrating our students.</p>
+					<p>Join us at ${escapeHTML(venueName)} on ${escapeHTML(primaryShow ? formatEventDate(primaryShow, locale()) : "")}, for an evening celebrating our students.</p>
 				</section>
 				<section class="pp-schedule-section" aria-labelledby="maya-show-schedule-title">
 					<div class="pp-section-heading"><div><p class="pp-eyebrow pp-eyebrow--dark">${escapeHTML(scheduleDate)}</p><h2 id="maya-show-schedule-title">Show schedule</h2></div></div>
@@ -710,7 +765,7 @@ function renderEvent(event) {
 				<aside class="pp-order-card">
 					<a class="pp-ticketing-back" href="#/">← All shows</a>
 					<p class="pp-eyebrow pp-eyebrow--dark">YOUR ORDER</p><h2>${escapeHTML(event.title)}</h2>
-					<div class="pp-order-event">${escapeHTML(event.session)}<span>${escapeHTML(formatEventDate(event))}${event.time ? ` · ${escapeHTML(formatEventTime(event))}` : ""}</span></div>
+					<div class="pp-order-event">${escapeHTML(event.session)}<span>${escapeHTML(formatEventDate(event, locale()))}${event.time ? ` · ${escapeHTML(formatEventTime(event, locale()))}` : ""}</span></div>
 					<div class="pp-order-event">${escapeHTML(event.venue.name)}<span>${event.type === "seated" ? `${remaining.toLocaleString()} numbered seats available across the seating columns` : event.ticketCapacity === null ? "General admission · no ticket limit in this demo" : `${remaining.toLocaleString()} general-admission tickets remaining`}</span></div>
 					<div class="pp-order-selected"><span>${event.type === "seated" ? `Tickets selected · ${state.selectedSeats.size}` : "Tickets"}</span><div>${selectedLabel}</div></div>
 					<div class="pp-order-total"><span>Subtotal</span><strong>${formatPrice(totalCents)}</strong></div>
@@ -723,6 +778,9 @@ function renderEvent(event) {
 }
 
 function renderCheckout(event) {
+	if (!state.demoPaymentReference) {
+		state.demoPaymentReference = crypto.randomUUID().replaceAll("-", "").toUpperCase();
+	}
 	const selectionCount = event.type === "seated" ? state.selectedSeats.size : state.quantity;
 	const selectedSeats = [...state.selectedSeats].sort();
 	const ticketLine = event.type === "seated"
@@ -730,6 +788,7 @@ function renderCheckout(event) {
 		: `${selectionCount} ${selectionCount === 1 ? "general-admission ticket" : "general-admission tickets"}`;
 	const totalCents = event.priceCents * selectionCount;
 	const walletLabel = state.paymentMethod === "apple" ? "Apple Pay" : state.paymentMethod === "google" ? "Google Pay" : "Card";
+	const demoPaymentQr = qrCodeSvg(`PITZ-DEMO|${state.demoPaymentReference}`);
 	const cardForm = state.paymentMethod === "card" ? `
 		<div class="pp-demo-card-notice" id="card-demo-note" role="note"><strong>Demo card only</strong><span>Use 4242 4242 4242 4242 · any future expiry (e.g. 12/30) · security code 123. Never enter a real card.</span></div>
 		<div class="pp-card-fields">
@@ -759,11 +818,15 @@ function renderCheckout(event) {
 					<section class="pp-form-section"><div class="pp-form-title"><span>02</span><div><h2>Payment method</h2><p>Choose a simulated payment option.</p></div></div><div class="pp-payment-options" role="group" aria-label="Simulated payment method"><button type="button" class="pp-payment-option ${state.paymentMethod === "apple" ? "is-active" : ""}" data-payment="apple" aria-pressed="${state.paymentMethod === "apple"}"><span class="pp-payment-brand">● Pay</span><small>Apple Pay</small></button><button type="button" class="pp-payment-option ${state.paymentMethod === "google" ? "is-active" : ""}" data-payment="google" aria-pressed="${state.paymentMethod === "google"}"><span class="pp-payment-brand pp-google">G Pay</span><small>Google Pay</small></button><button type="button" class="pp-payment-option ${state.paymentMethod === "card" ? "is-active" : ""}" data-payment="card" aria-pressed="${state.paymentMethod === "card"}"><span class="pp-payment-brand">▰▰</span><small>Card</small></button></div>
 						${cardForm}
 						<div class="pp-demo-payment"><span class="pp-lock">⌑</span><span><strong>${walletLabel} demo</strong><small>Demo only. No payment is processed. Card fields are never saved or sent.</small></span><span class="pp-demo-tag">DEMO</span></div>
+						<aside class="pp-demo-qr" aria-label="Demo payment QR code">
+							<div class="pp-demo-qr-image">${demoPaymentQr}</div>
+							<div><strong>Scan QR code for a demo payment reference</strong><p>Demo reference: <code>PP-DEMO-${state.demoPaymentReference.slice(0, 10)}</code></p><small>This does not open the school’s bank account or send or confirm a payment.</small></div>
+						</aside>
 					</section>
 					${state.notice ? `<p class="pp-inline-error" role="alert">${escapeHTML(state.notice)}</p>` : ""}
 					<button class="pp-button pp-button--lime pp-place-order" type="submit" ${state.busy || state.holdExpired ? "disabled" : ""}>${state.busy ? "Completing demo order…" : `Pay ${formatPrice(totalCents)} · Demo`}</button>
 				</form>
-				<aside class="pp-order-card pp-checkout-summary"><p class="pp-eyebrow pp-eyebrow--dark">ORDER SUMMARY</p><h2>${escapeHTML(event.title)}</h2><p class="pp-summary-session">${escapeHTML(event.session)}</p><div class="pp-summary-detail">${escapeHTML(formatEventDate(event))}${event.time ? `<br>${escapeHTML(formatEventTime(event))}` : ""}<br>${escapeHTML(event.venue.name)}</div><div class="pp-summary-ticket"><span>${escapeHTML(ticketLine)}</span><strong>${formatPrice(totalCents)}</strong></div><div class="pp-order-total"><span>Total</span><strong>${formatPrice(totalCents)}</strong></div><p class="pp-secure-note">This is a simulation; no money will be charged.</p></aside>
+				<aside class="pp-order-card pp-checkout-summary"><p class="pp-eyebrow pp-eyebrow--dark">ORDER SUMMARY</p><h2>${escapeHTML(event.title)}</h2><p class="pp-summary-session">${escapeHTML(event.session)}</p><div class="pp-summary-detail">${escapeHTML(formatEventDate(event, locale()))}${event.time ? `<br>${escapeHTML(formatEventTime(event, locale()))}` : ""}<br>${escapeHTML(event.venue.name)}</div><div class="pp-summary-ticket"><span>${escapeHTML(ticketLine)}</span><strong>${formatPrice(totalCents)}</strong></div><div class="pp-order-total"><span>Total</span><strong>${formatPrice(totalCents)}</strong></div><p class="pp-secure-note">This is a simulation; no money will be charged.</p></aside>
 			</div>
 		</main>`;
 }
@@ -790,7 +853,7 @@ function renderConfirmation(order) {
 			<article class="pp-wallet-pass" aria-label="Wallet-style demo ticket ${index + 1}">
 				<div class="pp-wallet-header"><span class="pp-wallet-logo">P</span><span>PITZ PASS <small>DEMO TICKET</small></span><span class="pp-wallet-pass-count">${index + 1} / ${tickets.length}</span></div>
 				<div class="pp-wallet-event"><p>${escapeHTML(event.session)} · ${escapeHTML(event.title.toUpperCase())}</p><h2>${escapeHTML(event.title)}</h2><strong>${escapeHTML(event.venue.name)}</strong></div>
-				<div class="pp-wallet-details"><div><span>DATE</span><strong>${escapeHTML(formatEventDate(event))}</strong></div>${event.time ? `<div><span>TIME</span><strong>${escapeHTML(formatEventTime(event))}</strong></div>` : ""}${ticketInfo}</div>
+				<div class="pp-wallet-details"><div><span>DATE</span><strong>${escapeHTML(formatEventDate(event, locale()))}</strong></div>${event.time ? `<div><span>TIME</span><strong>${escapeHTML(formatEventTime(event, locale()))}</strong></div>` : ""}${ticketInfo}</div>
 				<div class="pp-wallet-code-area"><div>${qr}<span>Scan at the door</span></div><div class="pp-wallet-order"><span>ORDER</span><strong>${escapeHTML(order.id)}</strong><span>TICKET ${index + 1} OF ${tickets.length}</span></div></div>
 				<div class="pp-wallet-demo">DEMO PASS · QR CODE IS NOT VALID FOR ENTRY</div>
 			</article>`;
@@ -819,6 +882,7 @@ function render() {
 				if (state.eventId !== event.id) {
 					state.eventId = event.id;
 					state.selectedSeats.clear();
+					state.demoPaymentReference = "";
 					state.holdId = "";
 					state.holdExpiresAt = "";
 					state.holdExpired = false;
@@ -875,10 +939,36 @@ function render() {
 		page = `<main class="pp-page pp-empty-state" role="alert"><strong>Ticket information is unavailable.</strong><span>${escapeHTML(error.message)}</span><a class="pp-button pp-button--navy" href="#/">Return home</a></main>`;
 	}
 	app.innerHTML = `${header()}${state.eventSettingsError ? `<p class="pp-config-warning" role="alert">${escapeHTML(state.eventSettingsError)}</p>` : ""}${page}<footer class="pp-footer"><a class="pp-brand" href="#/">${logo}<span>Pitz <strong>Pass</strong></span></a><span>Created by Mateo, Amilcar, Gerardo, Allen.</span></footer>`;
+	localizeApp();
 	app.classList.toggle("pp-app--ticketing", route.name === "event" && page.includes("pp-event-page"));
 }
 
 app.addEventListener("click", async (event) => {
+	const languageToggle = event.target.closest("[data-language-toggle]");
+	if (languageToggle) {
+		state.languageMenuOpen = !state.languageMenuOpen;
+		render();
+		return;
+	}
+
+	const languageChoice = event.target.closest("[data-language]");
+	if (languageChoice) {
+		state.language = languageChoice.dataset.language === "es" ? "es" : "en";
+		state.languageMenuOpen = false;
+		try {
+			localStorage.setItem("pitz-pass-language", state.language);
+		} catch (error) {
+			console.warn("Could not save the language preference:", error);
+		}
+		render();
+		return;
+	}
+	if (state.languageMenuOpen && !event.target.closest(".pp-language-switcher")) {
+		state.languageMenuOpen = false;
+		app.querySelector(".pp-language-menu")?.setAttribute("hidden", "");
+		app.querySelector("[data-language-toggle]")?.setAttribute("aria-expanded", "false");
+	}
+
 	if (suppressMapClick && event.target.closest(".pp-map-overview-scroll")) {
 		event.preventDefault();
 		return;
@@ -990,6 +1080,7 @@ app.addEventListener("click", async (event) => {
 				state.holdId = hold.holdId;
 				state.holdExpiresAt = hold.expiresAt;
 				state.holdExpired = false;
+				state.demoPaymentReference = "";
 				location.hash = "#/checkout";
 			} catch (error) {
 				state.holdLoading = false;
@@ -1010,6 +1101,7 @@ app.addEventListener("click", async (event) => {
 			}
 			return;
 		}
+		state.demoPaymentReference = "";
 		location.hash = "#/checkout";
 		return;
 	}
@@ -1045,6 +1137,12 @@ app.addEventListener("click", async (event) => {
 });
 
 app.addEventListener("keydown", (event) => {
+	if (event.key === "Escape" && state.languageMenuOpen) {
+		state.languageMenuOpen = false;
+		render();
+		app.querySelector("[data-language-toggle]")?.focus();
+		return;
+	}
 	const seat = event.target.closest("[data-seat]");
 	if (seat && (event.key === "Enter" || event.key === " ")) {
 		event.preventDefault();
@@ -1257,6 +1355,7 @@ app.addEventListener("submit", async (event) => {
 		state.quantity = 1;
 		state.customerName = "";
 		state.customerEmail = "";
+		state.demoPaymentReference = "";
 		state.holdId = "";
 		state.holdExpiresAt = "";
 		state.holdExpired = false;

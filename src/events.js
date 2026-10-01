@@ -125,9 +125,9 @@ export function formatPrice(cents) {
 	}).format(cents / 100);
 }
 
-export function formatEventDate(event) {
+export function formatEventDate(event, locale = "en-US") {
 	const date = new Date(`${event.date}T${event.time ?? "12:00"}:00`);
-	return new Intl.DateTimeFormat("en-US", {
+	return new Intl.DateTimeFormat(locale, {
 		weekday: "long",
 		month: "long",
 		day: "numeric",
@@ -135,10 +135,10 @@ export function formatEventDate(event) {
 	}).format(date);
 }
 
-export function formatEventTime(event) {
+export function formatEventTime(event, locale = "en-US") {
 	if (!event.time) return "";
 	const date = new Date(`${event.date}T${event.time}:00`);
-	return new Intl.DateTimeFormat("en-US", {
+	return new Intl.DateTimeFormat(locale, {
 		hour: "numeric",
 		minute: "2-digit"
 	}).format(date);

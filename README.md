@@ -33,6 +33,7 @@ The site is built with browser-native HTML, CSS, and JavaScript and runs as a Cl
 ### For attendees
 
 - Responsive landing page with event cards, dates, venue, ticket type, and prices.
+- English and Spanish language selector with a persistent preference and localized event dates and times.
 - Maya Show information page with showtimes, student arrival times, venue, and entry reminders.
 - Assigned seating for the Primary and Secondary Maya Shows:
   - Interactive Teatro Presidente seating map with section and row labels.
@@ -41,6 +42,7 @@ The site is built with browser-native HTML, CSS, and JavaScript and runs as a Cl
   - A 6-minute server-side seat hold begins when checkout starts, with a visible countdown and automatic release on expiration or when returning to seat selection.
 - General-admission quantity selection for Family Fest.
 - Checkout with simulated Apple Pay, Google Pay, or a demo-only card form.
+- A unique demo QR reference in checkout; it does not link to a bank or transfer/confirm money.
 - Order confirmation with a separate wallet-style pass and QR preview for each ticket.
 - Apple Wallet badge preview; tickets are not added to Apple Wallet.
 
